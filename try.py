@@ -6,6 +6,7 @@ from PyQt6 import uic  # For loading .ui files dynamically
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
+import torch
 
 from ServerConnection import ServerConnection
 
@@ -26,6 +27,19 @@ class ImageCanvas(FigureCanvas):
         """
         self.ax.clear()  # Clear any existing content
         self.ax.imshow(image_array, cmap='gray', aspect='auto')  # Plot the image
+        self.ax.axis('off')  # Turn off axis
+        self.draw()
+
+    def display_overlayed_image(self, input_image, overlay_image):
+        """
+        Display an overlayed image.
+        Args:
+            input_image (np.ndarray): The input image.
+            overlay_image (np.ndarray): The image to overlay.
+        """
+        self.ax.clear()  # Clear any existing content
+        self.ax.imshow(input_image, cmap='gray', aspect='auto')  # Plot the input image
+        self.ax.imshow(overlay_image, alpha=0.5, aspect='auto', cmap='seismic')  # Plot the overlay image
         self.ax.axis('off')  # Turn off axis
         self.draw()
 
@@ -64,6 +78,9 @@ class MainWindow(QMainWindow):
         self.loadBatchButton.clicked.connect(self.load_batch_click)
         self.nextButton.clicked.connect(self.next_image_click)
         self.prevButton.clicked.connect(self.prev_image_click)
+        self.dummyLoadButton.clicked.connect(self.dummy_load_image)
+        self.ThresholdSlider_1.valueChanged.connect(self.slider_value_changed)
+
 
 
 
@@ -127,6 +144,52 @@ class MainWindow(QMainWindow):
         self.canvas.display_image(np.array(image)[0])
 
         self.set_labels()
+
+
+    def dummy_load_image(self):
+        self.input_image = torch.load("data/input_image.pt").numpy()
+        self.uncertainty_image = torch.load("data/entropy.pt").numpy()
+
+        
+        self.canvas.display_overlayed_image(self.input_image, self.uncertainty_image)
+
+
+    def slider_value_changed(self, value):
+        """
+        Handle the slider change event .
+        Args:
+            value (int): The new value of the slider.
+        """
+
+        def map_value(value, in_min, in_max, out_min, out_max):
+            """Linearly maps a value from one range to another."""
+            return out_min + (float(value - in_min) / (in_max - in_min)) * (out_max - out_min)
+
+        # Map the slider value to the range of the entropy values
+        min_entropy = self.uncertainty_image.min()
+        max_entropy = self.uncertainty_image.max()
+        threshold = map_value(value, 0, 100, min_entropy, max_entropy)
+
+
+        # threshold the uncertainty image
+        thresholded_image = self.threshold_image(self.uncertainty_image, threshold)
+
+        # Display the thresholded image overlayed on the input image
+        self.canvas.display_overlayed_image(self.input_image, thresholded_image)
+
+
+
+    def threshold_image(self, image, threshold):
+        """
+        Threshold an image.
+        Args:
+            image (np.ndarray): The image to threshold.
+            threshold (float): The threshold value.
+        Returns:
+            np.ndarray: The thresholded image.
+        """
+        thresholded_image = np.where(image > threshold, image, 0)
+        return thresholded_image
 
         
         
