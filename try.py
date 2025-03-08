@@ -1,12 +1,13 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene
-from PyQt6.QtWidgets import QFileDialog
 
 from PyQt6 import uic  # For loading .ui files dynamically
+from PyQt6.QtCore import QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
 import torch
+import pandas as pd
 
 from ServerConnection import ServerConnection
 
@@ -54,23 +55,24 @@ class MainWindow(QMainWindow):
         self.conn = ServerConnection()
         self.conn.open_connection()
 
-        # Load dataframe
-        # self.dataframe = self.conn.get_dataframe()
+
 
         #init variables
         self.batch_index = -1
         self.img_index = 0
 
-        self.set_labels()
+        self.set_image_labels()
+        
 
-
-        #TODO: Create an API that queries the server for dataframe with ranked images and their entopy values
 
 
         # init UI
         # Add image canvas to layout
         self.canvas = ImageCanvas(self, width=5, height=4, dpi=100)
         self.horizontalLayout.addWidget(self.canvas)
+
+        # Disable interactive elements until dataframe is loaded
+        self.set_interactive_elements_enabled(False)
 
         # Connect the button
         # self.pushButton.clicked.connect(self.on_button_click)
@@ -82,15 +84,51 @@ class MainWindow(QMainWindow):
         self.ThresholdSlider_1.valueChanged.connect(self.slider_value_changed)
 
 
+        # Start polling for dataframe
+        self.start_dataframe_loading()
 
 
-    def set_labels(self):
+    def set_interactive_elements_enabled(self, enabled: bool):
+        """Enable or disable all interactive elements."""
+        self.pushButton_2.setEnabled(enabled)
+        self.loadBatchButton.setEnabled(enabled)
+        self.nextButton.setEnabled(enabled)
+        self.prevButton.setEnabled(enabled)
+        self.dummyLoadButton.setEnabled(enabled)
+        self.ThresholdSlider_1.setEnabled(enabled)
+
+    def start_dataframe_loading(self):
+        """ Periodically check if dataframe is ready """
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.check_dataframe)
+        self.timer.start(2000)  # Check every 2 seconds
+
+    def check_dataframe(self):
+        """ Fetch dataframe if available and stop timer once received """
+        df = self.conn.get_dataframe()
+        if df is not None:
+            self.stats_dataframe = pd.read_json(df)
+            self.timer.stop()  # Stop checking
+
+            # Enable interactive elements
+            self.set_interactive_elements_enabled(True)
+
+            self.dataframeLabel.setText("Dataframe: Loaded!")
+
+            # timeout for 5 seconds before clearing the label
+            QTimer.singleShot(5000, lambda: self.dataframeLabel.clear())
+
+
+
+    def set_image_labels(self):
         if self.batch_index == -1:
             self.batchLabel.setText("Batch: None")
             self.imageLabel.setText("Image: None")
             return
         self.batchLabel.setText(f"Batch: {self.batch_index}")
         self.imageLabel.setText(f"Image: {self.img_index}")
+
+
 
     def on_button_click(self):
         image = self.conn.get_image(self.batch_index, self.img_index)
@@ -104,7 +142,7 @@ class MainWindow(QMainWindow):
         self.batch_index = -1
         self.img_index = 0
 
-        self.set_labels()
+        self.set_image_labels()
 
 
     def load_batch_click(self):
@@ -114,7 +152,7 @@ class MainWindow(QMainWindow):
         self.canvas.display_image(np.array(image)[0])
 
 
-        self.set_labels()
+        self.set_image_labels()
 
 
     def load_dataframe_click(self):
@@ -131,7 +169,7 @@ class MainWindow(QMainWindow):
         image = self.conn.get_image(self.batch_index, self.img_index)
         self.canvas.display_image(np.array(image)[0])
 
-        self.set_labels()
+        self.set_image_labels()
 
 
     def prev_image_click(self):
@@ -143,7 +181,7 @@ class MainWindow(QMainWindow):
         image = self.conn.get_image(self.batch_index, self.img_index)
         self.canvas.display_image(np.array(image)[0])
 
-        self.set_labels()
+        self.set_image_labels()
 
 
     def dummy_load_image(self):
