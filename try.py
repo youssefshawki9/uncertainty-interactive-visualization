@@ -1,15 +1,119 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene
+from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QHeaderView
 
 from PyQt6 import uic  # For loading .ui files dynamically
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, QSortFilterProxyModel, pyqtSignal, QModelIndex
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
 import torch
 import pandas as pd
-
 from ServerConnection import ServerConnection
+from PyQt6.QtCore import Qt, QAbstractTableModel
+import pandas as pd
+
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableView, QPushButton, QMessageBox
+from PyQt6.QtCore import QSortFilterProxyModel, QModelIndex
+import pandas as pd
+
+
+class DataFrameDialog(QDialog):
+    row_selected = pyqtSignal(list,list)  # Signal to send selected row data
+
+    def __init__(self, dataframe, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("DataFrame Viewer")
+        self.resize(500, 300)
+
+        # Layout
+        layout = QVBoxLayout(self)
+
+        # Create QTableView
+        self.table_view = QTableView(self)
+        self.model = DataFrameModel(dataframe)
+        self.proxy_model = QSortFilterProxyModel(self)  # Sorting model
+        self.proxy_model.setSourceModel(self.model)
+
+        self.table_view.setModel(self.proxy_model)
+        self.table_view.setSortingEnabled(True)
+        self.table_view.horizontalHeader().setStretchLastSection(True)
+
+        # Connect double-click event
+        self.table_view.doubleClicked.connect(self.row_double_clicked)
+
+
+        # Add widgets to layout
+        layout.addWidget(self.table_view)
+        
+
+
+    def row_double_clicked(self, index: QModelIndex):
+        """ Emit the selected row along with correctly sorted surrounding rows """
+
+        # Get the correct row in the sorted view
+        sorted_row_idx = index.row()  
+        source_index = self.proxy_model.mapToSource(index)  # Convert to original index
+        original_row_idx = source_index.row()  # Get correct row index
+
+        # Get first and last visible row in sorted order
+        first_visible_sorted = self.table_view.indexAt(self.table_view.rect().topLeft()).row()
+        last_visible_sorted = self.table_view.indexAt(self.table_view.rect().bottomLeft()).row()
+
+        if last_visible_sorted == -1:  # If last row isn't fully visible, adjust
+            last_visible_sorted = self.proxy_model.rowCount() - 1
+
+        # Define the window of rows (±2 rows around selected)
+        window_size = 2
+        start_sorted_idx = max(first_visible_sorted, sorted_row_idx - window_size)
+        end_sorted_idx = min(last_visible_sorted, sorted_row_idx + window_size)
+
+        # Convert sorted indices to original dataframe indices
+        surrounding_rows = []
+        for i in range(start_sorted_idx, end_sorted_idx + 1):
+            source_row = self.proxy_model.mapToSource(self.proxy_model.index(i, 0)).row()  # Get original row
+            row_data = [self.model.data(self.model.index(source_row, col)) for col in range(self.model.columnCount())]
+            surrounding_rows.append(row_data)
+
+        # Get selected row data
+        selected_row_data = [self.model.data(self.model.index(original_row_idx, col)) for col in range(self.model.columnCount())]
+
+        # Emit both selected and surrounding rows
+        self.row_selected.emit(selected_row_data, surrounding_rows)
+
+    def get_window_rows_data(self):
+        """ Get the data of a window of rows around the selected row """
+        selected_row = self.table_view.selectedIndexes()[0].row()
+        window_size = 5  # Number of rows to show around the selected row
+
+
+
+
+class DataFrameModel(QAbstractTableModel):
+    def __init__(self, dataframe=pd.DataFrame(), parent=None):
+        super().__init__(parent)
+        self.dataframe = dataframe
+
+    def rowCount(self, parent=None):
+        return self.dataframe.shape[0]
+
+    def columnCount(self, parent=None):
+        return self.dataframe.shape[1]
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        if role == Qt.ItemDataRole.DisplayRole:
+            return str(self.dataframe.iloc[index.row(), index.column()])
+        return None
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.DisplayRole:
+            if orientation == Qt.Orientation.Horizontal:
+                return str(self.dataframe.columns[section])  # Column names
+            elif orientation == Qt.Orientation.Vertical:
+                return str(self.dataframe.index[section])  # Row index
+        return None
+
 
 
 class ImageCanvas(FigureCanvas):
@@ -40,6 +144,8 @@ class ImageCanvas(FigureCanvas):
         """
         self.ax.clear()  # Clear any existing content
         self.ax.imshow(input_image, cmap='gray', aspect='auto')  # Plot the input image
+        # Define a custom colormap for overlayed image with RGBA values
+        
         self.ax.imshow(overlay_image, alpha=0.5, aspect='auto', cmap='seismic')  # Plot the overlay image
         self.ax.axis('off')  # Turn off axis
         self.draw()
@@ -68,8 +174,11 @@ class MainWindow(QMainWindow):
 
         # init UI
         # Add image canvas to layout
-        self.canvas = ImageCanvas(self, width=5, height=4, dpi=100)
-        self.horizontalLayout.addWidget(self.canvas)
+        self.canvas_1 = ImageCanvas(self, width=7, height=6, dpi=100)
+        self.canvas_2 = ImageCanvas(self, width=7, height=6, dpi=100)
+
+        self.horizontalLayout_1.addWidget(self.canvas_1)
+        self.horizontalLayout_2.addWidget(self.canvas_2)
 
         # Disable interactive elements until dataframe is loaded
         self.set_interactive_elements_enabled(False)
@@ -82,8 +191,6 @@ class MainWindow(QMainWindow):
         self.prevButton.clicked.connect(self.prev_image_click)
         self.dummyLoadButton.clicked.connect(self.dummy_load_image)
         self.ThresholdSlider_1.valueChanged.connect(self.slider_value_changed)
-
-
         # Start polling for dataframe
         self.start_dataframe_loading()
 
@@ -112,11 +219,31 @@ class MainWindow(QMainWindow):
 
             # Enable interactive elements
             self.set_interactive_elements_enabled(True)
+            
 
             self.dataframeLabel.setText("Dataframe: Loaded!")
-
             # timeout for 5 seconds before clearing the label
             QTimer.singleShot(5000, lambda: self.dataframeLabel.clear())
+            self.show_dataframe_popup(self.stats_dataframe)
+
+
+    def show_dataframe_popup(self, df):
+        """ Open the popup window to display the dataframe """
+        self.dialog = DataFrameDialog(df, self)
+        self.dialog.row_selected.connect(self.handle_selected_row_window)  # Connect signal
+        self.dialog.show()  # Show as modal popup
+
+    # def handle_selected_row(self, row_data):
+    #     """ Handle the selected row received from DataFrameDialog """
+    #     print("Row selected in popup:", row_data)
+
+
+    
+    def handle_selected_row_window(self, selected_row, surrounding_rows):
+        """ Handle the selected row and its surrounding rows """
+        print("Selected Row:", selected_row)
+        print("Surrounding Rows:", surrounding_rows)
+
 
 
 
@@ -133,30 +260,46 @@ class MainWindow(QMainWindow):
     def on_button_click(self):
         image = self.conn.get_image(self.batch_index, self.img_index)
 
-        self.canvas.display_image(np.array(image)[0])
+        self.canvas_1.display_image(np.array(image)[0])
+        self.canvas_2.display_image(np.array(image)[0])
 
     def clear_button_click(self):
-        self.canvas.ax.clear()
-        self.canvas.ax.axis('off')
-        self.canvas.draw()
+        self.canvas_1.ax.clear()
+        self.canvas_1.ax.axis('off')
+        self.canvas_1.draw()
+
+        self.canvas_2.ax.clear()
+        self.canvas_2.ax.axis('off')
+        self.canvas_2.draw()
+
         self.batch_index = -1
         self.img_index = 0
 
         self.set_image_labels()
 
 
+    def get_images(self, indices):
+        pass
+
+
+
+
     def load_batch_click(self):
-        self.batch_index += 1
-        self.img_index = 0
-        image = self.conn.get_image(self.batch_index, self.img_index)
-        self.canvas.display_image(np.array(image)[0])
+        self.batch_index = 3
+        self.img_index = 4
+        # put batch_index and img_index in a tuple
+        indices = [(self.batch_index, self.img_index)]
+        images_df = pd.read_json(self.conn.get_images(indices))
+        image_data = images_df[(images_df["batch_index"] == self.batch_index)
+                                 & (images_df["image_index"] == self.img_index)]
+        self.input_image = np.array(image_data["input_image"].values[0])
+        self.uncertainty_image = np.array(image_data["entropy_image"].values[0])
+        self.canvas_1.display_overlayed_image(self.input_image, self.uncertainty_image)
 
 
         self.set_image_labels()
 
 
-    def load_dataframe_click(self):
-        pass
 
 
 
@@ -189,7 +332,8 @@ class MainWindow(QMainWindow):
         self.uncertainty_image = torch.load("data/entropy.pt").numpy()
 
         
-        self.canvas.display_overlayed_image(self.input_image, self.uncertainty_image)
+        self.canvas_1.display_overlayed_image(self.input_image, self.uncertainty_image)
+        self.canvas_2.display_overlayed_image(self.input_image, self.uncertainty_image)
 
 
     def slider_value_changed(self, value):
@@ -213,7 +357,7 @@ class MainWindow(QMainWindow):
         thresholded_image = self.threshold_image(self.uncertainty_image, threshold)
 
         # Display the thresholded image overlayed on the input image
-        self.canvas.display_overlayed_image(self.input_image, thresholded_image)
+        self.canvas_1.display_overlayed_image(self.input_image, thresholded_image)
 
 
 
@@ -228,10 +372,6 @@ class MainWindow(QMainWindow):
         """
         thresholded_image = np.where(image > threshold, image, 0)
         return thresholded_image
-
-        
-        
-
 
     def closeEvent(self, event):
         self.conn.close_connection()

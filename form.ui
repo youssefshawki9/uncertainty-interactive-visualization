@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1024</width>
-    <height>600</height>
+    <width>1338</width>
+    <height>687</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,19 +17,19 @@
    <widget class="QWidget" name="horizontalLayoutWidget">
     <property name="geometry">
      <rect>
-      <x>90</x>
+      <x>130</x>
       <y>20</y>
       <width>331</width>
       <height>381</height>
      </rect>
     </property>
-    <layout class="QHBoxLayout" name="horizontalLayout"/>
+    <layout class="QHBoxLayout" name="horizontalLayout_1"/>
    </widget>
    <widget class="QPushButton" name="pushButton_2">
     <property name="geometry">
      <rect>
-      <x>510</x>
-      <y>500</y>
+      <x>380</x>
+      <y>590</y>
       <width>111</width>
       <height>51</height>
      </rect>
@@ -41,8 +41,8 @@
    <widget class="QPushButton" name="loadBatchButton">
     <property name="geometry">
      <rect>
-      <x>370</x>
-      <y>500</y>
+      <x>500</x>
+      <y>590</y>
       <width>111</width>
       <height>51</height>
      </rect>
@@ -54,8 +54,8 @@
    <widget class="QPushButton" name="prevButton">
     <property name="geometry">
      <rect>
-      <x>400</x>
-      <y>450</y>
+      <x>410</x>
+      <y>540</y>
       <width>83</width>
       <height>29</height>
      </rect>
@@ -67,8 +67,8 @@
    <widget class="QPushButton" name="nextButton">
     <property name="geometry">
      <rect>
-      <x>500</x>
-      <y>450</y>
+      <x>510</x>
+      <y>540</y>
       <width>83</width>
       <height>29</height>
      </rect>
@@ -106,7 +106,7 @@
    <widget class="QSlider" name="ThresholdSlider_1">
     <property name="geometry">
      <rect>
-      <x>140</x>
+      <x>240</x>
       <y>410</y>
       <width>221</width>
       <height>31</height>
@@ -119,7 +119,7 @@
    <widget class="QWidget" name="horizontalLayoutWidget_2">
     <property name="geometry">
      <rect>
-      <x>580</x>
+      <x>620</x>
       <y>20</y>
       <width>331</width>
       <height>381</height>
@@ -130,7 +130,7 @@
    <widget class="QSlider" name="ThresholdSlider_2">
     <property name="geometry">
      <rect>
-      <x>630</x>
+      <x>790</x>
       <y>410</y>
       <width>221</width>
       <height>31</height>
@@ -140,31 +140,51 @@
      <enum>Qt::Orientation::Horizontal</enum>
     </property>
    </widget>
-   <widget class="QComboBox" name="prefilterSelectionComboBox">
-    <property name="geometry">
-     <rect>
-      <x>670</x>
-      <y>440</y>
-      <width>161</width>
-      <height>28</height>
-     </rect>
-    </property>
-   </widget>
    <widget class="QComboBox" name="prefilterSelectionComboBox_2">
     <property name="geometry">
      <rect>
-      <x>170</x>
-      <y>450</y>
+      <x>620</x>
+      <y>410</y>
       <width>161</width>
       <height>28</height>
      </rect>
     </property>
+    <item>
+     <property name="text">
+      <string>Entropy</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>Error map</string>
+     </property>
+    </item>
+   </widget>
+   <widget class="QComboBox" name="prefilterSelectionComboBox_1">
+    <property name="geometry">
+     <rect>
+      <x>70</x>
+      <y>410</y>
+      <width>161</width>
+      <height>28</height>
+     </rect>
+    </property>
+    <item>
+     <property name="text">
+      <string>Entropy</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>Error map</string>
+     </property>
+    </item>
    </widget>
    <widget class="QPushButton" name="dummyLoadButton">
     <property name="geometry">
      <rect>
-      <x>780</x>
-      <y>510</y>
+      <x>820</x>
+      <y>560</y>
       <width>83</width>
       <height>29</height>
      </rect>
@@ -176,7 +196,7 @@
    <widget class="QLabel" name="dataframeLabel">
     <property name="geometry">
      <rect>
-      <x>50</x>
+      <x>140</x>
       <y>490</y>
       <width>161</width>
       <height>20</height>
@@ -184,6 +204,72 @@
     </property>
     <property name="text">
      <string/>
+    </property>
+   </widget>
+   <widget class="QComboBox" name="prefilterSelectionComboBox_3">
+    <property name="geometry">
+     <rect>
+      <x>160</x>
+      <y>450</y>
+      <width>161</width>
+      <height>28</height>
+     </rect>
+    </property>
+    <item>
+     <property name="text">
+      <string>Entropy</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>Error map</string>
+     </property>
+    </item>
+   </widget>
+   <widget class="QComboBox" name="prefilterSelectionComboBox_4">
+    <property name="geometry">
+     <rect>
+      <x>740</x>
+      <y>450</y>
+      <width>161</width>
+      <height>28</height>
+     </rect>
+    </property>
+    <item>
+     <property name="text">
+      <string>Entropy</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>Error map</string>
+     </property>
+    </item>
+   </widget>
+   <widget class="QCheckBox" name="checkBox">
+    <property name="geometry">
+     <rect>
+      <x>90</x>
+      <y>510</y>
+      <width>111</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Binary/Raw</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="checkBox_2">
+    <property name="geometry">
+     <rect>
+      <x>650</x>
+      <y>500</y>
+      <width>111</width>
+      <height>26</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Binary/Raw</string>
     </property>
    </widget>
   </widget>

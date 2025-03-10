@@ -182,6 +182,13 @@ class ServerConnection:
         return response.json()["image"]
     
 
+    def get_images(self, indices):
+        response = self.send_api_get("get-images", {"image_indices": indices}, timeout=10)
+        response.raise_for_status()
+
+        return response.json()["images"]
+    
+
     def get_dataframe(self):
         response = self.send_api_get("get-dataframe", timeout=10)
         response.raise_for_status()
