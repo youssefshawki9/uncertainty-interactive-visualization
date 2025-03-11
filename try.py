@@ -1,8 +1,8 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QHeaderView
-
+from collections import defaultdict
 from PyQt6 import uic  # For loading .ui files dynamically
-from PyQt6.QtCore import QTimer, QSortFilterProxyModel, pyqtSignal, QModelIndex
+from PyQt6.QtCore import QTimer, QSortFilterProxyModel, pyqtSignal, QModelIndex, QVariant
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
@@ -17,13 +17,44 @@ from PyQt6.QtCore import QSortFilterProxyModel, QModelIndex
 import pandas as pd
 
 
+
+class CustomSortFilterProxyModel(QSortFilterProxyModel):
+    def lessThan(self, left_index, right_index):
+        """ Ensure numbers are sorted numerically, strings alphabetically, and booleans correctly. """
+        left_data = left_index.data(Qt.ItemDataRole.EditRole)
+        right_data = right_index.data(Qt.ItemDataRole.EditRole)
+
+        # Handle None or empty values
+        if left_data is None or left_data == "":
+            return True
+        if right_data is None or right_data == "":
+            return False
+
+        # Convert NumPy types to standard Python types
+        left_data = self.convert_type(left_data)
+        right_data = self.convert_type(right_data)
+
+        return left_data < right_data  # Compare correctly
+
+    def convert_type(self, value):
+        """ Convert NumPy data types to standard Python types for proper sorting """
+        if isinstance(value, (np.int64, np.int32, np.int16, np.int8)):
+            return int(value)
+        elif isinstance(value, (np.float64, np.float32, np.float16)):
+            return float(value)
+        elif isinstance(value, (np.bool_, bool)):
+            return bool(value)
+        elif isinstance(value, str):
+            return value.strip()  # Ensure no whitespace issues
+        return value  # Fallback
+
 class DataFrameDialog(QDialog):
     row_selected = pyqtSignal(list,list)  # Signal to send selected row data
 
     def __init__(self, dataframe, parent=None):
         super().__init__(parent)
         self.setWindowTitle("DataFrame Viewer")
-        self.resize(500, 300)
+        self.resize(500,300)
 
         # Layout
         layout = QVBoxLayout(self)
@@ -31,7 +62,9 @@ class DataFrameDialog(QDialog):
         # Create QTableView
         self.table_view = QTableView(self)
         self.model = DataFrameModel(dataframe)
-        self.proxy_model = QSortFilterProxyModel(self)  # Sorting model
+        
+        # Use the CustomSortFilterProxyModel for proper sorting
+        self.proxy_model = CustomSortFilterProxyModel(self)  
         self.proxy_model.setSourceModel(self.model)
 
         self.table_view.setModel(self.proxy_model)
@@ -41,9 +74,16 @@ class DataFrameDialog(QDialog):
         # Connect double-click event
         self.table_view.doubleClicked.connect(self.row_double_clicked)
 
+        # Add close button
+        self.close_button = QPushButton("Close", self)
+        self.close_button.clicked.connect(self.close)
 
         # Add widgets to layout
         layout.addWidget(self.table_view)
+        layout.addWidget(self.close_button)
+
+        # Ensure the dialog stays on top when clicked
+        self.setWindowFlags(Qt.WindowType.Window)
         
 
 
@@ -63,7 +103,7 @@ class DataFrameDialog(QDialog):
             last_visible_sorted = self.proxy_model.rowCount() - 1
 
         # Define the window of rows (±2 rows around selected)
-        window_size = 2
+        window_size = 0
         start_sorted_idx = max(first_visible_sorted, sorted_row_idx - window_size)
         end_sorted_idx = min(last_visible_sorted, sorted_row_idx + window_size)
 
@@ -100,11 +140,19 @@ class DataFrameModel(QAbstractTableModel):
         return self.dataframe.shape[1]
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        """ Preserve datatype for sorting, but format properly for display """
         if not index.isValid():
-            return None
+            return QVariant()
+
+        value = self.dataframe.iloc[index.row(), index.column()]
+
         if role == Qt.ItemDataRole.DisplayRole:
-            return str(self.dataframe.iloc[index.row(), index.column()])
-        return None
+            return str(value)  # Display values as strings in the UI
+
+        if role == Qt.ItemDataRole.EditRole:
+            return value  # Preserve original datatype for internal logic
+
+        return QVariant()
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if role == Qt.ItemDataRole.DisplayRole:
@@ -112,7 +160,7 @@ class DataFrameModel(QAbstractTableModel):
                 return str(self.dataframe.columns[section])  # Column names
             elif orientation == Qt.Orientation.Vertical:
                 return str(self.dataframe.index[section])  # Row index
-        return None
+        return QVariant()
 
 
 
@@ -161,14 +209,7 @@ class MainWindow(QMainWindow):
         self.conn = ServerConnection()
         self.conn.open_connection()
 
-
-
-        #init variables
-        self.batch_index = -1
-        self.img_index = 0
-
-        self.set_image_labels()
-        
+        self.images_df = pd.DataFrame()
 
 
 
@@ -214,7 +255,9 @@ class MainWindow(QMainWindow):
         """ Fetch dataframe if available and stop timer once received """
         df = self.conn.get_dataframe()
         if df is not None:
-            self.stats_dataframe = pd.read_json(df)
+            self.stats_dataframe = pd.read_json(df, dtype=True)
+            # Add column called "IsLoaded" to dataframe to track if image is loaded
+            self.stats_dataframe["IsLoaded"] = False
             self.timer.stop()  # Stop checking
 
             # Enable interactive elements
@@ -230,31 +273,13 @@ class MainWindow(QMainWindow):
     def show_dataframe_popup(self, df):
         """ Open the popup window to display the dataframe """
         self.dialog = DataFrameDialog(df, self)
-        self.dialog.row_selected.connect(self.handle_selected_row_window)  # Connect signal
+        self.dialog.row_selected.connect(self.dataframe_selection_double_click)  # Connect signal
         self.dialog.show()  # Show as modal popup
-
-    # def handle_selected_row(self, row_data):
-    #     """ Handle the selected row received from DataFrameDialog """
-    #     print("Row selected in popup:", row_data)
-
-
-    
-    def handle_selected_row_window(self, selected_row, surrounding_rows):
-        """ Handle the selected row and its surrounding rows """
-        print("Selected Row:", selected_row)
-        print("Surrounding Rows:", surrounding_rows)
-
-
 
 
     def set_image_labels(self):
-        if self.batch_index == -1:
-            self.batchLabel.setText("Batch: None")
-            self.imageLabel.setText("Image: None")
-            return
-        self.batchLabel.setText(f"Batch: {self.batch_index}")
-        self.imageLabel.setText(f"Image: {self.img_index}")
-
+        self.batchLabel.setText(f"Batch: {self.selected_image_data['batch_index'].values[0]}")
+        self.imageLabel.setText(f"Image: {self.selected_image_data['image_index'].values[0]}")
 
 
     def on_button_click(self):
@@ -278,12 +303,47 @@ class MainWindow(QMainWindow):
         self.set_image_labels()
 
 
-    def get_images(self, indices):
-        pass
+    def get_images(self, indices: list[tuple[int, int]]) -> pd.DataFrame:
+        """ Get images from the server given a list of indices. """
+        #TODO: Optimize by keeping the part of dataframe that is being loaded to set IsLoaded to True
+
+        # Get only the images that are not already loaded
+        indices = [(batch_index, img_index) for batch_index, img_index in indices
+                   if not self.stats_dataframe[(self.stats_dataframe["batch_index"] == batch_index)
+                                                & (self.stats_dataframe["image_index"] == img_index)]["IsLoaded"].values[0]]
+        
+        
+        if not indices:
+            return pd.DataFrame()
+        
+        images_df = pd.read_json(self.conn.get_images(indices))
+
+        # Convert the images to numpy arrays
+        for col in images_df.columns:
+            if col.endswith("_image"):
+                images_df[col] = images_df[col].apply(lambda x: np.array(x))
+
+        #TODO: Set IsLoaded to True for the loaded images
+        self.stats_dataframe.loc[self.stats_dataframe["batch_index"].isin(images_df["batch_index"])
+                                 & self.stats_dataframe["image_index"].isin(images_df["image_index"]), "IsLoaded"] = True
+        
+        self.images_df = pd.concat([self.images_df, images_df], ignore_index=True)
+
+
+        return images_df
+    
+
+    def get_image_data_from_df(self, batch_index, img_index) -> pd.DataFrame: 
+        """ Get image data from the dataframe """
+        # TODO: Optimize by using indexing
+        image_data = self.images_df[(self.images_df["batch_index"] == batch_index)
+                                     & (self.images_df["image_index"] == img_index)]
+        return image_data
+    
 
 
 
-
+    # dummy function for testing getting images from server
     def load_batch_click(self):
         self.batch_index = 3
         self.img_index = 4
@@ -298,6 +358,30 @@ class MainWindow(QMainWindow):
 
 
         self.set_image_labels()
+
+
+
+    def dataframe_selection_double_click(self, selected_row, surrounding_rows):
+        """ Handle the selected row and its surrounding rows """
+        #TODO: Could be optimized if we require only one image at a time (at DataFrameDialog)
+
+        indices = [(int(row[0]), int(row[1])) for row in surrounding_rows]
+        print("Indices:", indices)
+
+
+        # indices = [(int(selected_row[0]), int(selected_row[1]))]
+
+        # Get images from server
+        _ = self.get_images(indices)
+        print(self.images_df)
+
+
+        # Display the selected image
+        self.selected_image_data = self.get_image_data_from_df(int(selected_row[0]), int(selected_row[1]))
+        self.canvas_1.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
+        self.set_image_labels()
+        
+
 
 
 
