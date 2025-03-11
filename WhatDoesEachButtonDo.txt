@@ -1,0 +1,84 @@
+Dropdown (Foreground):
+	Baseline: set to 4th column entry of [StatsDataframe] (index 3)
+	options: "Error Map" AND all columns of stats Dataframe except 0,1,-1 (aka. indices and isLoaded)
+	ON_SELECT:
+		1. IF NOT "Error Map": Set [ForegroundImage] to column [Dropdown (Foreground)]
+		   ELSE: 
+			1. Compute Error Mask
+			2. Set [ForegroundImage] to Error Mask
+		2. IF all pixels in Image are 0 or 1: set [Binarize Foreground] to IS_DISABLED
+
+Dropdown (Background):
+	Baseline: set to 3rd column entry of [StatsDataframe] (index 2)
+	options: "Error Map"  AND all columns of stats Dataframe except 0,1,-1 
+	ON_SELECT:
+		1. IF NOT "Error Map": Set [BackgroundImage] to column [Dropdown (Background)]
+		   ELSE: 
+			1. Compute Error Mask
+			2. Set [BackgroundImage] to Error Mask
+
+Threshold Slider:
+	already implemented
+
+Binarize Foreground:
+	Baseline: IS_OFF
+	OFF->ON:
+	1. Using value from [Threshold Slider] and [Foreground Image]
+	2. Create a B/W mask of the [Foreground Image] where everything is white above value from [Threshold Slider]
+	3. Replace [Foreground Image] with created mask
+	ON->OFF:
+	1. Read [ImagesDataframe] at Column [Dropdown (Foreground)] and Row [Current Image]
+	2. Replace Foreground with this image and [CustomColourmap]
+
+Prev:
+	Baseline: IS_DISABLED
+	ON_[ImageDisplay] from any source:
+	IF [Current Image] is 1st in [ImagesDataframe]: IS_DISABLED; ELSE: IS_ENABLED
+	ON_CLICK:
+	1. Set [BackgroundImage] to previous Image in [ImagesDataframe] at column [Dropdown (Foreground)]
+	2. Set [ForegroundImage] to previous Image in [ImagesDataframe] at column [Dropdown (Background)]
+	(3. as this is an [ImageDisplay] operation, check if this button should be disabled)
+
+Next:
+	Baseline: IS_ENABLED
+	ON_CLICK:
+	1. IF [CurrentImage] is last in [ImagesDataFrame]: 
+		TRY : get next 10 entries in [StatsDataframe] with [NotLoaded] flag and do [LoadImages] for them
+		Append the return dataframe to [ImagesDataframe]
+		EXCEPT: 
+			a) set [Next], [Dropdown (Foreground)], [Dropdown (Background)], [Threshold Slider], 
+				and [Binarize Foreground] to IS_DISABLED 
+			b) set [ForegroundImage] to NONE
+			c) set [BackgroundImage] to NONE
+			d) Display label in both canvas with text "End of Dataset reached"	
+	2. Set [BackgroundImage] to next Image in [ImagesDataframe] at column [Dropdown (Foreground)]
+	3. Set [ForegroundImage] to next Image in [ImagesDataframe]at column [Dropdown (Background)]	
+
+Load:
+	ON_CLICK:
+		1. Show a) interactive version of [StatsDataframe]
+			b) [LoadNext] button
+				ONCLICK: [LoadImages] with next 10 unloaded images for current sorting
+			c) [LoadSelected] button
+				ONCLICK: [LoadImages] with selected images in the order of the dataframe
+			ONCLICK: [LoadImages] with selected image
+		2. Set canvases to 1st image in return value (respect the current settings in dropdowns!)
+		2. Append loaded images dataframe to [ImagesDataframe]	
+
+Reset: Replace with Sort button
+	Has a dropdown next to it with same options as [Dropdown (Background)]
+	ONCLICK: 1. Sort images in [ImagesDataframe] by dropdown
+		 2. Set images in canvas to 1st row of [ImagesDataframe] (respect the current settings in dropdowns!)
+
+Remove: (new button) removes a selection of images
+	ON_CLICK:
+		1. Show a) interactive version of [ImagesDataframe] (not [StatsDataframe]!) with highlighted [CurrentImage]
+				ONDOUBLECLICK
+					Remove clicked image
+					IF [CurrentImage] was the removed image: set [CurrentImage] to 1st in [ImagesDataframe]
+			b) [Remove] Button
+				ONCLICK: Removes currently selected Images from [ImagesDataframe]
+					 IF [CurrentImage] was in the removed images: set [CurrentImage] to 1st in [ImagesDataframe]
+			c) [Cancel] Button
+				ONCLICK
+					NOP

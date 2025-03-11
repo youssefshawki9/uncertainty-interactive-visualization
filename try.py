@@ -6,7 +6,7 @@ from PyQt6.QtCore import QTimer, QSortFilterProxyModel, pyqtSignal, QModelIndex,
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
-import torch
+#import torch
 import pandas as pd
 from ServerConnection import ServerConnection
 from PyQt6.QtCore import Qt, QAbstractTableModel
@@ -232,8 +232,24 @@ class MainWindow(QMainWindow):
         self.prevButton.clicked.connect(self.prev_image_click)
         self.dummyLoadButton.clicked.connect(self.dummy_load_image)
         self.ThresholdSlider_1.valueChanged.connect(self.slider_value_changed)
+        #Setup the ComboBoxes for fore-/background selection
+        combobox_options = self._GetComboBoxOptions()
+        self.ComboBoxBackground1.addItems(combobox_options)
+        self.ComboBoxBackground2.addItems(combobox_options)
+        self.ComboBoxForeground1.addItems(combobox_options)
+        self.ComboBoxForeground2.addItems(combobox_options)
+        self.ComboBoxBackground1.currentTextChanged.connect(lambda: self.dropdown_change(column = self.ComboBoxBackground1.currentText(),canvas = 1))
+        self.ComboBoxBackground2.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxBackground2.currentText(),2))
+        self.ComboBoxForeground1.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxForeground1.currentText(),1))
+        self.ComboBoxForeground2.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxForeground2.currentText(),2))
+
         # Start polling for dataframe
+        self.stats_dataframe = None
         self.start_dataframe_loading()
+
+        #Image Handling
+        self.dataframe_images = None
+        self.current_image_idx = None #the index in <dataframe_images> of the currently selected/displayed image
 
 
     def set_interactive_elements_enabled(self, enabled: bool):
@@ -244,12 +260,16 @@ class MainWindow(QMainWindow):
         self.prevButton.setEnabled(enabled)
         self.dummyLoadButton.setEnabled(enabled)
         self.ThresholdSlider_1.setEnabled(enabled)
+        self.ComboBoxBackground1.set_Enabled(enabled)
+        self.ComboBoxBackground2.set_Enabled(enabled)
+        self.ComboBoxForeground1.set_Enabled(enabled)
+        self.ComboBoxForeground2.set_Enabled(enabled)
 
     def start_dataframe_loading(self):
         """ Periodically check if dataframe is ready """
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.check_dataframe)
-        self.timer.start(2000)  # Check every 2 seconds
+        self.timer.start(1500)  # Check every 1.5 seconds
 
     def check_dataframe(self):
         """ Fetch dataframe if available and stop timer once received """
@@ -275,6 +295,67 @@ class MainWindow(QMainWindow):
         self.dialog = DataFrameDialog(df, self)
         self.dialog.row_selected.connect(self.dataframe_selection_double_click)  # Connect signal
         self.dialog.show()  # Show as modal popup
+
+    # def handle_selected_row(self, row_data):
+    #     """ Handle the selected row received from DataFrameDialog """
+    #     print("Row selected in popup:", row_data)
+
+    def _GetComboBoxOptions(self) -> list[str]:
+        #needs the columns 0 and 1 to be index cols and -1 to be IsLoaded helper column 
+        options = self.stats_dataframe.columns.values[2:-1].tolist()
+        options.append("Error Mask")
+        return options
+
+    def dropdown_change(self, column:str, canvas:str):
+        """Changes the image in [layer] on [canvas] to the one in the column specified by the new value of the dropdown.
+        Assumes Column 3 of dataframe_images is target/ground_truth and col 4 is prediction for computation of error mask.
+        Assumes Column Error mask already exists in the dataframe"""
+        row = self.current_image_idx
+        #Create the error mask if we want it and it does not yet exist
+        if (column == "Error Mask") and (self.dataframe_images["Error Mask"][row] == None): self.compute_errorMask(row)
+        match canvas:
+            case "1": 
+                B = self.dataframe_images[column][row]
+                F = self.dataframe_images[column][row]
+                self.canvas_1.display_overlayed_image(B,F)
+                if F.dtype == np.bool: #if foreground is only binary, disable binarize box and threshold slider
+                    self.checkBoxBinarize1.setEnabled(False)
+                    self.ThresholdSlider_1.setEnabled(False)
+                else: 
+                    self.checkBoxBinarize1.setEnabled(True)
+                    self.ThresholdSlider_1.setEnabled(True)
+            case "2":
+                B = self.dataframe_images[column][row]
+                F = self.dataframe_images[column][row]
+                self.canvas_2.display_overlayed_image(B,F)
+                if F.dtype == np.bool: #if foreground is only binary, disable binarize box and threshold slider
+                    self.checkBoxBinarize2.setEnabled(False)
+                    self.ThresholdSlider_2.setEnabled(False)
+                else: 
+                    self.checkBoxBinarize2.setEnabled(True)
+                    self.ThresholdSlider_2.setEnabled(True)
+
+    
+    def compute_errorMask(self, row=None) ->np.ndarray:
+        """Computes the Error Mask for an image and sets it in the dataframe_images.
+        Returns a copy of the computed mask for convenience.
+        Parameters:
+            row (optional): The index of the image for which the error mask will be computed and set. Defaults to the index of the current Image if no value or None is passed
+        Returns:
+            mask: the computed mask"""
+        if not row: row = self.current_image_idx
+        mask = (self.dataframe_images[4][row] != self.dataframe_images[3][row]).astype(np.bool)
+        self.dataframe_images["Error Mask"][row] = mask
+        return mask
+
+
+    
+    def handle_selected_row_window(self, selected_row, surrounding_rows):
+        """ Handle the selected row and its surrounding rows """
+        print("Selected Row:", selected_row)
+        print("Surrounding Rows:", surrounding_rows)
+
+
 
 
     def set_image_labels(self):
