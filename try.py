@@ -6,7 +6,7 @@ from PyQt6.QtCore import QTimer, QSortFilterProxyModel, pyqtSignal, QModelIndex,
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
-#import torch
+import torch
 import pandas as pd
 from ServerConnection import ServerConnection
 from PyQt6.QtCore import Qt, QAbstractTableModel
@@ -232,12 +232,7 @@ class MainWindow(QMainWindow):
         self.prevButton.clicked.connect(self.prev_image_click)
         self.dummyLoadButton.clicked.connect(self.dummy_load_image)
         self.ThresholdSlider_1.valueChanged.connect(self.slider_value_changed)
-        #Setup the ComboBoxes for fore-/background selection
-        combobox_options = self._GetComboBoxOptions()
-        self.ComboBoxBackground1.addItems(combobox_options)
-        self.ComboBoxBackground2.addItems(combobox_options)
-        self.ComboBoxForeground1.addItems(combobox_options)
-        self.ComboBoxForeground2.addItems(combobox_options)
+
         self.ComboBoxBackground1.currentTextChanged.connect(lambda: self.dropdown_change(column = self.ComboBoxBackground1.currentText(),canvas = 1))
         self.ComboBoxBackground2.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxBackground2.currentText(),2))
         self.ComboBoxForeground1.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxForeground1.currentText(),1))
@@ -260,16 +255,26 @@ class MainWindow(QMainWindow):
         self.prevButton.setEnabled(enabled)
         self.dummyLoadButton.setEnabled(enabled)
         self.ThresholdSlider_1.setEnabled(enabled)
-        self.ComboBoxBackground1.set_Enabled(enabled)
-        self.ComboBoxBackground2.set_Enabled(enabled)
-        self.ComboBoxForeground1.set_Enabled(enabled)
-        self.ComboBoxForeground2.set_Enabled(enabled)
+        self.ComboBoxBackground1.setEnabled(enabled)
+        self.ComboBoxBackground2.setEnabled(enabled)
+        self.ComboBoxForeground1.setEnabled(enabled)
+        self.ComboBoxForeground2.setEnabled(enabled)
 
     def start_dataframe_loading(self):
         """ Periodically check if dataframe is ready """
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.check_dataframe)
         self.timer.start(1500)  # Check every 1.5 seconds
+
+
+    def populate_comboboxes(self):
+        """Populate the comboboxes with the columns of the dataframe_images"""
+        #Setup the ComboBoxes for fore-/background selection
+        combobox_options = self._GetComboBoxOptions()
+        self.ComboBoxBackground1.addItems(combobox_options)
+        self.ComboBoxBackground2.addItems(combobox_options)
+        self.ComboBoxForeground1.addItems(combobox_options)
+        self.ComboBoxForeground2.addItems(combobox_options)
 
     def check_dataframe(self):
         """ Fetch dataframe if available and stop timer once received """
@@ -282,6 +287,7 @@ class MainWindow(QMainWindow):
 
             # Enable interactive elements
             self.set_interactive_elements_enabled(True)
+            self.populate_comboboxes()
             
 
             self.dataframeLabel.setText("Dataframe: Loaded!")
@@ -347,15 +353,6 @@ class MainWindow(QMainWindow):
         mask = (self.dataframe_images[4][row] != self.dataframe_images[3][row]).astype(np.bool)
         self.dataframe_images["Error Mask"][row] = mask
         return mask
-
-
-    
-    def handle_selected_row_window(self, selected_row, surrounding_rows):
-        """ Handle the selected row and its surrounding rows """
-        print("Selected Row:", selected_row)
-        print("Surrounding Rows:", surrounding_rows)
-
-
 
 
     def set_image_labels(self):
