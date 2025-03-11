@@ -16,7 +16,6 @@ Dropdown (Background):
 		   ELSE: 
 			1. Compute Error Mask
 			2. Set [BackgroundImage] to Error Mask
-		
 
 Threshold Slider:
 	already implemented

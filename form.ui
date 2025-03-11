@@ -140,7 +140,7 @@
      <enum>Qt::Orientation::Horizontal</enum>
     </property>
    </widget>
-   <widget class="QComboBox" name="prefilterSelectionComboBox_2">
+   <widget class="QComboBox" name="ComboBoxForeground2">
     <property name="geometry">
      <rect>
       <x>620</x>
@@ -160,7 +160,7 @@
      </property>
     </item>
    </widget>
-   <widget class="QComboBox" name="prefilterSelectionComboBox_1">
+   <widget class="QComboBox" name="ComboBoxForeground1">
     <property name="geometry">
      <rect>
       <x>70</x>
@@ -206,7 +206,7 @@
      <string/>
     </property>
    </widget>
-   <widget class="QComboBox" name="prefilterSelectionComboBox_3">
+   <widget class="QComboBox" name="ComboBoxBackground1">
     <property name="geometry">
      <rect>
       <x>160</x>
@@ -226,7 +226,7 @@
      </property>
     </item>
    </widget>
-   <widget class="QComboBox" name="prefilterSelectionComboBox_4">
+   <widget class="QComboBox" name="ComboBoxBackground2">
     <property name="geometry">
      <rect>
       <x>740</x>
@@ -246,7 +246,7 @@
      </property>
     </item>
    </widget>
-   <widget class="QCheckBox" name="checkBox">
+   <widget class="QCheckBox" name="checkBoxBinarize1">
     <property name="geometry">
      <rect>
       <x>90</x>
@@ -259,7 +259,7 @@
      <string>Binary/Raw</string>
     </property>
    </widget>
-   <widget class="QCheckBox" name="checkBox_2">
+   <widget class="QCheckBox" name="checkBoxBinarize2">
     <property name="geometry">
      <rect>
       <x>650</x>
