@@ -149,16 +149,6 @@
       <height>28</height>
      </rect>
     </property>
-    <item>
-     <property name="text">
-      <string>Entropy</string>
-     </property>
-    </item>
-    <item>
-     <property name="text">
-      <string>Error map</string>
-     </property>
-    </item>
    </widget>
    <widget class="QComboBox" name="ComboBoxForeground1">
     <property name="geometry">
@@ -169,16 +159,6 @@
       <height>28</height>
      </rect>
     </property>
-    <item>
-     <property name="text">
-      <string>Entropy</string>
-     </property>
-    </item>
-    <item>
-     <property name="text">
-      <string>Error map</string>
-     </property>
-    </item>
    </widget>
    <widget class="QPushButton" name="dummyLoadButton">
     <property name="geometry">
@@ -209,42 +189,22 @@
    <widget class="QComboBox" name="ComboBoxBackground1">
     <property name="geometry">
      <rect>
-      <x>160</x>
+      <x>240</x>
       <y>450</y>
       <width>161</width>
       <height>28</height>
      </rect>
     </property>
-    <item>
-     <property name="text">
-      <string>Entropy</string>
-     </property>
-    </item>
-    <item>
-     <property name="text">
-      <string>Error map</string>
-     </property>
-    </item>
    </widget>
    <widget class="QComboBox" name="ComboBoxBackground2">
     <property name="geometry">
      <rect>
-      <x>740</x>
+      <x>770</x>
       <y>450</y>
       <width>161</width>
       <height>28</height>
      </rect>
     </property>
-    <item>
-     <property name="text">
-      <string>Entropy</string>
-     </property>
-    </item>
-    <item>
-     <property name="text">
-      <string>Error map</string>
-     </property>
-    </item>
    </widget>
    <widget class="QCheckBox" name="checkBoxBinarize1">
     <property name="geometry">
@@ -270,6 +230,32 @@
     </property>
     <property name="text">
      <string>Binary/Raw</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>110</x>
+      <y>450</y>
+      <width>121</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:12pt; font-weight:700;&quot;&gt;Background&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_2">
+    <property name="geometry">
+     <rect>
+      <x>650</x>
+      <y>450</y>
+      <width>121</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:12pt; font-weight:700;&quot;&gt;Background&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
    </widget>
   </widget>

@@ -193,7 +193,7 @@ class ImageCanvas(FigureCanvas):
         self.ax.clear()  # Clear any existing content
         self.ax.imshow(input_image, cmap='gray', aspect='auto')  # Plot the input image
         # Define a custom colormap for overlayed image with RGBA values
-        
+
         self.ax.imshow(overlay_image, alpha=0.5, aspect='auto', cmap='seismic')  # Plot the overlay image
         self.ax.axis('off')  # Turn off axis
         self.draw()
@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         self.conn.open_connection()
 
         self.images_df = pd.DataFrame()
+        self.images_df["Error Mask"] = None
 
 
 
@@ -223,6 +224,8 @@ class MainWindow(QMainWindow):
 
         # Disable interactive elements until dataframe is loaded
         self.set_interactive_elements_enabled(False)
+
+        self.current_image_idx = None #the index in <dataframe_images> of the currently selected/displayed image
 
         # Connect the button
         # self.pushButton.clicked.connect(self.on_button_click)
@@ -242,9 +245,8 @@ class MainWindow(QMainWindow):
         self.stats_dataframe = None
         self.start_dataframe_loading()
 
-        #Image Handling
-        self.dataframe_images = None
-        self.current_image_idx = None #the index in <dataframe_images> of the currently selected/displayed image
+
+        
 
 
     def set_interactive_elements_enabled(self, enabled: bool):
@@ -269,7 +271,7 @@ class MainWindow(QMainWindow):
 
     def populate_comboboxes(self):
         """Populate the comboboxes with the columns of the dataframe_images"""
-        #Setup the ComboBoxes for fore-/background selection
+        # Setup the ComboBoxes for fore-/background selection
         combobox_options = self._GetComboBoxOptions()
         self.ComboBoxBackground1.addItems(combobox_options)
         self.ComboBoxBackground2.addItems(combobox_options)
@@ -308,21 +310,39 @@ class MainWindow(QMainWindow):
 
     def _GetComboBoxOptions(self) -> list[str]:
         #needs the columns 0 and 1 to be index cols and -1 to be IsLoaded helper column 
-        options = self.stats_dataframe.columns.values[2:-1].tolist()
-        options.append("Error Mask")
+        # options = self.stats_dataframe.columns.values[2:-1].tolist()
+        # options.append("Error Mask")
+        options = ['Raw image','Entropy', 'Error Mask']
+        #TODO: Could make a mapping between column names and their display names
         return options
+    
+    def map_metric_to_image(self, metric:str, row:int) -> np.ndarray:
+        """Maps the column name to the corresponding image in the dataframe_images"""
+        # Dictionary to map column names to their corresponding image
+        metric_mapping = {'Entropy': 'entropy_image', 'Error Mask': 'Error Mask', 'Raw image': 'input_image'}
+        return self.images_df[metric_mapping[metric]][row]
+    
 
     def dropdown_change(self, column:str, canvas:str):
         """Changes the image in [layer] on [canvas] to the one in the column specified by the new value of the dropdown.
         Assumes Column 3 of dataframe_images is target/ground_truth and col 4 is prediction for computation of error mask.
         Assumes Column Error mask already exists in the dataframe"""
+        if self.current_image_idx == None: return
         row = self.current_image_idx
+
+        print(column)
+
+        # Dictionary to map column names to their corresponding overlayed image
+        metric_mapping = {'Entropy': 'entropy_image', 'Error Mask': 'Error Mask', 'Raw image': 'input_image'}
+
         #Create the error mask if we want it and it does not yet exist
-        if (column == "Error Mask") and (self.dataframe_images["Error Mask"][row] == None): self.compute_errorMask(row)
+        if (column == "Error Mask") and (bool(self.images_df.iloc[row].isna()['Error Mask'])): self.compute_errorMask(row)
         match canvas:
-            case "1": 
-                B = self.dataframe_images[column][row]
-                F = self.dataframe_images[column][row]
+            case 1:
+                background_column = metric_mapping[self.ComboBoxBackground1.currentText()]
+                foreground_column = metric_mapping[self.ComboBoxForeground1.currentText()]
+                B = self.images_df[background_column][row]
+                F = self.images_df[foreground_column][row]
                 self.canvas_1.display_overlayed_image(B,F)
                 if F.dtype == np.bool: #if foreground is only binary, disable binarize box and threshold slider
                     self.checkBoxBinarize1.setEnabled(False)
@@ -330,9 +350,11 @@ class MainWindow(QMainWindow):
                 else: 
                     self.checkBoxBinarize1.setEnabled(True)
                     self.ThresholdSlider_1.setEnabled(True)
-            case "2":
-                B = self.dataframe_images[column][row]
-                F = self.dataframe_images[column][row]
+            case 2:
+                background_column = metric_mapping[self.ComboBoxBackground2.currentText()]
+                foreground_column = metric_mapping[self.ComboBoxForeground2.currentText()]
+                B = self.images_df[background_column][row]
+                F = self.images_df[foreground_column][row]
                 self.canvas_2.display_overlayed_image(B,F)
                 if F.dtype == np.bool: #if foreground is only binary, disable binarize box and threshold slider
                     self.checkBoxBinarize2.setEnabled(False)
@@ -349,9 +371,11 @@ class MainWindow(QMainWindow):
             row (optional): The index of the image for which the error mask will be computed and set. Defaults to the index of the current Image if no value or None is passed
         Returns:
             mask: the computed mask"""
+        
+        print("COMPUTING ERROR MASK")
         if not row: row = self.current_image_idx
-        mask = (self.dataframe_images[4][row] != self.dataframe_images[3][row]).astype(np.bool)
-        self.dataframe_images["Error Mask"][row] = mask
+        mask = (self.images_df['prediction_image'][row] != self.images_df['target_image'][row]).astype(np.bool)
+        self.images_df["Error Mask"][row] = mask
         return mask
 
 
@@ -405,7 +429,7 @@ class MainWindow(QMainWindow):
         self.stats_dataframe.loc[self.stats_dataframe["batch_index"].isin(images_df["batch_index"])
                                  & self.stats_dataframe["image_index"].isin(images_df["image_index"]), "IsLoaded"] = True
         
-        self.images_df = pd.concat([self.images_df, images_df], ignore_index=True)
+        self.images_df = pd.concat([images_df, self.images_df], ignore_index=True)
 
 
         return images_df
@@ -456,11 +480,17 @@ class MainWindow(QMainWindow):
 
         # Display the selected image
         self.selected_image_data = self.get_image_data_from_df(int(selected_row[0]), int(selected_row[1]))
+        self.current_image_idx = self.selected_image_data.index[0]
+        print("index", self.current_image_idx)
         self.canvas_1.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
+        self.canvas_2.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
         self.set_image_labels()
         
 
 
+    def set_displayed_image(self, batch_index, img_index):
+        """ Set the displayed image to the one at the specified index. """
+        image_data = self.get_image_data_from_df(batch_index, img_index)
 
 
 
