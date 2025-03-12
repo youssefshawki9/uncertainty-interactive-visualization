@@ -119,7 +119,7 @@
    <widget class="QWidget" name="horizontalLayoutWidget_2">
     <property name="geometry">
      <rect>
-      <x>620</x>
+      <x>520</x>
       <y>20</y>
       <width>331</width>
       <height>381</height>
@@ -130,7 +130,7 @@
    <widget class="QSlider" name="ThresholdSlider_2">
     <property name="geometry">
      <rect>
-      <x>790</x>
+      <x>690</x>
       <y>410</y>
       <width>221</width>
       <height>31</height>
@@ -143,7 +143,7 @@
    <widget class="QComboBox" name="ComboBoxForeground2">
     <property name="geometry">
      <rect>
-      <x>620</x>
+      <x>520</x>
       <y>410</y>
       <width>161</width>
       <height>28</height>
@@ -199,7 +199,7 @@
    <widget class="QComboBox" name="ComboBoxBackground2">
     <property name="geometry">
      <rect>
-      <x>770</x>
+      <x>670</x>
       <y>450</y>
       <width>161</width>
       <height>28</height>
@@ -222,7 +222,7 @@
    <widget class="QCheckBox" name="checkBoxBinarize2">
     <property name="geometry">
      <rect>
-      <x>650</x>
+      <x>550</x>
       <y>500</y>
       <width>111</width>
       <height>26</height>
@@ -248,7 +248,7 @@
    <widget class="QLabel" name="label_2">
     <property name="geometry">
      <rect>
-      <x>650</x>
+      <x>550</x>
       <y>450</y>
       <width>121</width>
       <height>31</height>
@@ -256,6 +256,16 @@
     </property>
     <property name="text">
      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:12pt; font-weight:700;&quot;&gt;Background&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+   </widget>
+   <widget class="QTableView" name="imagesTable">
+    <property name="geometry">
+     <rect>
+      <x>960</x>
+      <y>410</y>
+      <width>331</width>
+      <height>231</height>
+     </rect>
     </property>
    </widget>
   </widget>

@@ -163,6 +163,12 @@ class DataFrameModel(QAbstractTableModel):
         return QVariant()
 
 
+    def update_data(self, new_dataframe):
+        """ Update the dataframe and refresh the table view """
+        self.beginResetModel()
+        self.dataframe = new_dataframe
+        self.endResetModel()
+
 
 class ImageCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
@@ -198,6 +204,14 @@ class ImageCanvas(FigureCanvas):
         self.ax.axis('off')  # Turn off axis
         self.draw()
 
+class LoadedImagesFilterProxyModel(QSortFilterProxyModel):
+    def filterAcceptsRow(self, source_row, source_parent):
+        """ Only show rows where IsLoaded is True """
+        index = self.sourceModel().index(source_row, self.sourceModel().dataframe.columns.get_loc("IsLoaded"))
+        value = index.data(Qt.ItemDataRole.EditRole)
+        return bool(value)  # Show row only if IsLoaded is True
+
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -211,6 +225,16 @@ class MainWindow(QMainWindow):
 
         self.images_df = pd.DataFrame()
         self.images_df["Error Mask"] = None
+
+        self.imagesTable.setSortingEnabled(True)  # Enable sorting
+
+        # Create a model for stats_dataframe
+        self.stats_model = DataFrameModel(pd.DataFrame())  
+        self.proxy_model = LoadedImagesFilterProxyModel(self)  # Use custom filter
+        self.proxy_model.setSourceModel(self.stats_model)
+
+        self.imagesTable.setModel(self.proxy_model)
+        self.imagesTable.doubleClicked.connect(self.on_image_table_double_click)
 
 
 
@@ -248,6 +272,48 @@ class MainWindow(QMainWindow):
 
         
 
+    def on_image_table_double_click(self, index):
+        """ Handle double-click on table row and display the selected image. """
+        source_index = self.proxy_model.mapToSource(index) # Convert sorted index to original
+        print("source index: ",source_index.row()) 
+        row_idx = source_index.row()
+
+        # Retrieve batch_index and image_index from the selected row
+        batch_index = self.stats_dataframe.iloc[row_idx]["batch_index"]
+        image_index = self.stats_dataframe.iloc[row_idx]["image_index"]
+
+        self.display_selected_image(batch_index, image_index)
+
+
+    def display_selected_image(self, batch_index, image_index):
+        """ Display the image corresponding to batch_index and image_index, given selected combo box values. """
+        image_data = self.get_image_data_from_df(batch_index, image_index)
+
+        if not image_data.empty:
+            self.current_image_idx = image_data.index[0]
+
+            # get selected combo box values
+            background_1 = self.ComboBoxBackground1.currentText()
+            background_2 = self.ComboBoxBackground2.currentText()
+            foreground_1 = self.ComboBoxForeground1.currentText()
+            foreground_2 = self.ComboBoxForeground2.currentText()
+
+            # get the images corresponding to the selected combo box values
+            B1 = self.map_metric_to_image(background_1, self.current_image_idx)
+            B2 = self.map_metric_to_image(background_2, self.current_image_idx)
+            F1 = self.map_metric_to_image(foreground_1, self.current_image_idx)
+            F2 = self.map_metric_to_image(foreground_2, self.current_image_idx)
+
+            # display the images
+            self.canvas_1.display_overlayed_image(B1, F1)
+            self.canvas_2.display_overlayed_image(B2, F2)
+
+            self.set_image_labels(batch_index, image_index)
+
+    def update_stats_table(self):
+        """ Update the model and apply filtering when stats_dataframe updates """
+        self.stats_model.update_data(self.stats_dataframe)
+        self.proxy_model.invalidateFilter()  # Reapply the filter
 
     def set_interactive_elements_enabled(self, enabled: bool):
         """Enable or disable all interactive elements."""
@@ -304,9 +370,6 @@ class MainWindow(QMainWindow):
         self.dialog.row_selected.connect(self.dataframe_selection_double_click)  # Connect signal
         self.dialog.show()  # Show as modal popup
 
-    # def handle_selected_row(self, row_data):
-    #     """ Handle the selected row received from DataFrameDialog """
-    #     print("Row selected in popup:", row_data)
 
     def _GetComboBoxOptions(self) -> list[str]:
         #needs the columns 0 and 1 to be index cols and -1 to be IsLoaded helper column 
@@ -373,22 +436,23 @@ class MainWindow(QMainWindow):
             mask: the computed mask"""
         
         print("COMPUTING ERROR MASK")
-        if not row: row = self.current_image_idx
+        if row == None: row = self.current_image_idx
         mask = (self.images_df['prediction_image'][row] != self.images_df['target_image'][row]).astype(np.bool)
         self.images_df["Error Mask"][row] = mask
         return mask
 
 
-    def set_image_labels(self):
-        self.batchLabel.setText(f"Batch: {self.selected_image_data['batch_index'].values[0]}")
-        self.imageLabel.setText(f"Image: {self.selected_image_data['image_index'].values[0]}")
+    def set_image_labels(self, batch_index=None, img_index=None):
+        """ Set the labels for the current image """
+        self.batchLabel.setText(f"Batch: {batch_index}")
+        self.imageLabel.setText(f"Image: {img_index}")
 
 
-    def on_button_click(self):
-        image = self.conn.get_image(self.batch_index, self.img_index)
+    # def on_button_click(self):
+    #     image = self.conn.get_image(self.batch_index, self.img_index)
 
-        self.canvas_1.display_image(np.array(image)[0])
-        self.canvas_2.display_image(np.array(image)[0])
+    #     self.canvas_1.display_image(np.array(image)[0])
+    #     self.canvas_2.display_image(np.array(image)[0])
 
     def clear_button_click(self):
         self.canvas_1.ax.clear()
@@ -431,12 +495,21 @@ class MainWindow(QMainWindow):
         
         self.images_df = pd.concat([images_df, self.images_df], ignore_index=True)
 
+        print(self.images_df)
+
+        # Compute the error mask for the loaded images
+        for row in images_df.index:
+            print("Computing error mask for row", row)
+            self.compute_errorMask(row)
+
+        self.update_stats_table()  # Refresh the table
+
 
         return images_df
     
 
     def get_image_data_from_df(self, batch_index, img_index) -> pd.DataFrame: 
-        """ Get image data from the dataframe """
+        """ Get image row from the local dataframe """
         # TODO: Optimize by using indexing
         image_data = self.images_df[(self.images_df["batch_index"] == batch_index)
                                      & (self.images_df["image_index"] == img_index)]
@@ -464,7 +537,7 @@ class MainWindow(QMainWindow):
 
 
     def dataframe_selection_double_click(self, selected_row, surrounding_rows):
-        """ Handle the selected row and its surrounding rows """
+        """ Load selected image from server to local dataframe """
         #TODO: Could be optimized if we require only one image at a time (at DataFrameDialog)
 
         indices = [(int(row[0]), int(row[1])) for row in surrounding_rows]
@@ -475,22 +548,17 @@ class MainWindow(QMainWindow):
 
         # Get images from server
         _ = self.get_images(indices)
-        print(self.images_df)
+        # print(self.images_df)
 
 
-        # Display the selected image
-        self.selected_image_data = self.get_image_data_from_df(int(selected_row[0]), int(selected_row[1]))
-        self.current_image_idx = self.selected_image_data.index[0]
-        print("index", self.current_image_idx)
-        self.canvas_1.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
-        self.canvas_2.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
-        self.set_image_labels()
+        # # Display the selected image
+        # self.selected_image_data = self.get_image_data_from_df(int(selected_row[0]), int(selected_row[1]))
+        # self.current_image_idx = self.selected_image_data.index[0]
+        # print("index", self.current_image_idx)
+        # self.canvas_1.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
+        # self.canvas_2.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
+        # self.set_image_labels()
         
-
-
-    def set_displayed_image(self, batch_index, img_index):
-        """ Set the displayed image to the one at the specified index. """
-        image_data = self.get_image_data_from_df(batch_index, img_index)
 
 
 
