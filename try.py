@@ -224,7 +224,7 @@ class MainWindow(QMainWindow):
         self.conn.open_connection()
 
         self.images_df = pd.DataFrame()
-        self.images_df["Error Mask"] = None
+        # self.images_df["Error Mask"] = None
 
         self.imagesTable.setSortingEnabled(True)  # Enable sorting
 
@@ -274,6 +274,7 @@ class MainWindow(QMainWindow):
 
     def on_image_table_double_click(self, index):
         """ Handle double-click on table row and display the selected image. """
+        print("Double-clicked on row:", index)
         source_index = self.proxy_model.mapToSource(index) # Convert sorted index to original
         print("source index: ",source_index.row()) 
         row_idx = source_index.row()
@@ -427,7 +428,7 @@ class MainWindow(QMainWindow):
                     self.ThresholdSlider_2.setEnabled(True)
 
     
-    def compute_errorMask(self, row=None) ->np.ndarray:
+    def compute_errorMask(self, images_df ,row=None) ->np.ndarray:
         """Computes the Error Mask for an image and sets it in the dataframe_images.
         Returns a copy of the computed mask for convenience.
         Parameters:
@@ -437,8 +438,10 @@ class MainWindow(QMainWindow):
         
         print("COMPUTING ERROR MASK")
         if row == None: row = self.current_image_idx
-        mask = (self.images_df['prediction_image'][row] != self.images_df['target_image'][row]).astype(np.bool)
-        self.images_df["Error Mask"][row] = mask
+        # mask = (self.images_df['prediction_image'][row] != self.images_df['target_image'][row]).astype(np.bool)
+        mask = (images_df['prediction_image'][row] != images_df['target_image'][row]).astype(np.bool)
+
+        # self.images_df["Error Mask"][row] = mask
         return mask
 
 
@@ -482,6 +485,8 @@ class MainWindow(QMainWindow):
         if not indices:
             return pd.DataFrame()
         
+
+        
         images_df = pd.read_json(self.conn.get_images(indices))
 
         # Convert the images to numpy arrays
@@ -493,14 +498,22 @@ class MainWindow(QMainWindow):
         self.stats_dataframe.loc[self.stats_dataframe["batch_index"].isin(images_df["batch_index"])
                                  & self.stats_dataframe["image_index"].isin(images_df["image_index"]), "IsLoaded"] = True
         
-        self.images_df = pd.concat([images_df, self.images_df], ignore_index=True)
 
-        print(self.images_df)
+        
 
+        # Check if the error mask column exists in the dataframe
+        # if "Error Mask" not in self.images_df.columns:
+        #     self.images_df["Error Mask"] = None
+
+        
+        images_df["Error Mask"] = None
         # Compute the error mask for the loaded images
         for row in images_df.index:
             print("Computing error mask for row", row)
-            self.compute_errorMask(row)
+            images_df['Error Mask'][row] = self.compute_errorMask(images_df, row)
+
+        self.images_df = pd.concat([self.images_df,images_df], ignore_index=True)
+        print(self.images_df)
 
         self.update_stats_table()  # Refresh the table
 
@@ -548,6 +561,7 @@ class MainWindow(QMainWindow):
 
         # Get images from server
         _ = self.get_images(indices)
+
         # print(self.images_df)
 
 
@@ -564,27 +578,41 @@ class MainWindow(QMainWindow):
 
 
     def next_image_click(self):
-        if self.img_index == 31:
-            self.img_index = 0
-            # use the cache
-        else:
-            self.img_index += 1
-        image = self.conn.get_image(self.batch_index, self.img_index)
-        self.canvas.display_image(np.array(image)[0])
+        # Get the next image
+        
+        if self.current_image_idx == len(self.images_df)-1:
+            return
+        
+        self.current_image_idx += 1
+        # Make sure the previous button is enabled
+        # self.prevButton.setEnabled(True)
 
-        self.set_image_labels()
+        print("current image index", self.current_image_idx)
+            
+        image_data = self.images_df.iloc[self.current_image_idx]
+        self.display_selected_image(image_data["batch_index"], image_data["image_index"])
+
+
+        self.set_image_labels(image_data["batch_index"], image_data["image_index"])
 
 
     def prev_image_click(self):
-        if self.img_index == 0:
-            self.img_index = 31
-            # use the cache
-        else:
-            self.img_index -= 1
-        image = self.conn.get_image(self.batch_index, self.img_index)
-        self.canvas.display_image(np.array(image)[0])
+        # Get the previous image
+        
+        if self.current_image_idx == 0:
+            return
+        
+        self.current_image_idx -= 1
 
-        self.set_image_labels()
+        # Make sure the next button is enabled
+        # self.nextButton.setEnabled(True)
+
+        print("current image index", self.current_image_idx)
+
+        image_data = self.images_df.iloc[self.current_image_idx]
+        self.display_selected_image(image_data["batch_index"], image_data["image_index"])
+
+        self.set_image_labels(image_data["batch_index"], image_data["image_index"])
 
 
     def dummy_load_image(self):
