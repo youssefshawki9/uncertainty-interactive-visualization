@@ -50,11 +50,14 @@ class CustomSortFilterProxyModel(QSortFilterProxyModel):
 
 class DataFrameDialog(QDialog):
     row_selected = pyqtSignal(list,list)  # Signal to send selected row data
+    load_batch_signal = pyqtSignal(list)  # Signal to load next batch of images
 
     def __init__(self, dataframe, parent=None):
         super().__init__(parent)
         self.setWindowTitle("DataFrame Viewer")
         self.resize(500,300)
+
+        self.last_loaded_index = 0  # Track last loaded index for current sorting
 
         # Layout
         layout = QVBoxLayout(self)
@@ -71,6 +74,10 @@ class DataFrameDialog(QDialog):
         self.table_view.setSortingEnabled(True)
         self.table_view.horizontalHeader().setStretchLastSection(True)
 
+
+        # Connect sorting changes to reset tracking
+        self.proxy_model.layoutChanged.connect(self.reset_batch_loading)
+
         # Connect double-click event
         self.table_view.doubleClicked.connect(self.row_double_clicked)
 
@@ -78,13 +85,49 @@ class DataFrameDialog(QDialog):
         self.close_button = QPushButton("Close", self)
         self.close_button.clicked.connect(self.close)
 
+        # Add load next batch button
+        self.loadBatchButton = QPushButton("Load Next Batch", self)
+        self.loadBatchButton.clicked.connect(self.load_next_batch_clicked)
+
         # Add widgets to layout
         layout.addWidget(self.table_view)
         layout.addWidget(self.close_button)
+        layout.addWidget(self.loadBatchButton)
 
         # Ensure the dialog stays on top when clicked
         self.setWindowFlags(Qt.WindowType.Window)
         
+
+    def reset_batch_loading(self):
+        """ Reset batch tracking when sorting changes. """
+        self.last_loaded_index = 0
+
+    def load_next_batch_clicked(self):
+        """ Load the next 10 images from the currently sorted view. """
+        total_rows = self.proxy_model.rowCount()
+        if self.last_loaded_index >= total_rows:
+            QMessageBox.information(self, "Info", "All images in the current view are already loaded.")
+            return
+
+        batch_size = 10
+        indices_to_load = []
+
+        for i in range(self.last_loaded_index, min(self.last_loaded_index + batch_size, total_rows)):
+            source_index = self.proxy_model.mapToSource(self.proxy_model.index(i, 0))
+            row_idx = source_index.row()
+
+            batch_index = self.model.data(self.model.index(row_idx, self.model.dataframe.columns.get_loc("batch_index")), Qt.ItemDataRole.EditRole)
+            image_index = self.model.data(self.model.index(row_idx, self.model.dataframe.columns.get_loc("image_index")), Qt.ItemDataRole.EditRole)
+
+            indices_to_load.append((int(batch_index), int(image_index)))
+
+        # Update the last loaded index
+        self.last_loaded_index += batch_size
+
+        # Emit signal to MainWindow to load these images
+        self.load_batch_signal.emit(indices_to_load)
+        
+
 
 
     def row_double_clicked(self, index: QModelIndex):
@@ -369,6 +412,7 @@ class MainWindow(QMainWindow):
         """ Open the popup window to display the dataframe """
         self.dialog = DataFrameDialog(df, self)
         self.dialog.row_selected.connect(self.dataframe_selection_double_click)  # Connect signal
+        self.dialog.load_batch_signal.connect(self.get_images) # Connect signal
         self.dialog.show()  # Show as modal popup
 
 
