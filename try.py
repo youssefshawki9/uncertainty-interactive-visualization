@@ -1,6 +1,5 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QHeaderView
-from collections import defaultdict
 from PyQt6 import uic  # For loading .ui files dynamically
 from PyQt6.QtCore import QTimer, QSortFilterProxyModel, pyqtSignal, QModelIndex, QVariant
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -11,7 +10,8 @@ import pandas as pd
 from ServerConnection import ServerConnection
 from PyQt6.QtCore import Qt, QAbstractTableModel
 import pandas as pd
-
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableView, QPushButton, QMessageBox
 from PyQt6.QtCore import QSortFilterProxyModel, QModelIndex
 import pandas as pd
@@ -258,18 +258,34 @@ class ImageCanvas(FigureCanvas):
         self.ax.axis('off')  # Turn off axis
         self.draw()
 
+
     def display_overlayed_image(self, input_image, overlay_image):
         """
-        Display an overlayed image.
+        Display an overlayed image with transparency using Otsu's thresholding.
+        
         Args:
             input_image (np.ndarray): The input image.
-            overlay_image (np.ndarray): The image to overlay.
+            overlay_image (np.ndarray): The entropy image to overlay.
         """
         self.ax.clear()  # Clear any existing content
         self.ax.imshow(input_image, cmap='gray', aspect='auto')  # Plot the input image
-        # Define a custom colormap for overlayed image with RGBA values
 
-        self.ax.imshow(overlay_image, alpha=0.5, aspect='auto', cmap='seismic')  # Plot the overlay image
+        threshold = 0.1
+
+        # Normalize overlay image
+        norm = mcolors.Normalize(vmin=np.min(overlay_image), vmax=np.max(overlay_image))
+        
+        # Get the seismic colormap
+        cmap = cm.get_cmap('seismic')
+        
+        # Apply colormap to the normalized overlay image
+        overlay_rgba = cmap(norm(overlay_image))  # Converts to RGBA
+
+        # Make values below Otsu's threshold transparent
+        overlay_rgba[overlay_image < threshold, 3] = 0  # Set alpha to 0 for low entropy values
+
+        # Plot the overlay image
+        self.ax.imshow(overlay_rgba, aspect='auto')
         self.ax.axis('off')  # Turn off axis
         self.draw()
 
