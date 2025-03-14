@@ -51,6 +51,7 @@ class CustomSortFilterProxyModel(QSortFilterProxyModel):
 class DataFrameDialog(QDialog):
     row_selected = pyqtSignal(list,list)  # Signal to send selected row data
     load_batch_signal = pyqtSignal(list)  # Signal to load next batch of images
+    load_selected_images_signal = pyqtSignal(list)  # Signal for loading selected images
 
     def __init__(self, dataframe, parent=None):
         super().__init__(parent)
@@ -74,6 +75,9 @@ class DataFrameDialog(QDialog):
         self.table_view.setSortingEnabled(True)
         self.table_view.horizontalHeader().setStretchLastSection(True)
 
+        self.table_view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)  # Select entire rows
+        self.table_view.setSelectionMode(QTableView.SelectionMode.MultiSelection)  # Allow multiple row selection
+
 
         # Connect sorting changes to reset tracking
         self.proxy_model.layoutChanged.connect(self.reset_batch_loading)
@@ -81,18 +85,19 @@ class DataFrameDialog(QDialog):
         # Connect double-click event
         self.table_view.doubleClicked.connect(self.row_double_clicked)
 
-        # Add close button
-        self.close_button = QPushButton("Close", self)
-        self.close_button.clicked.connect(self.close)
-
         # Add load next batch button
         self.loadBatchButton = QPushButton("Load Next Batch", self)
         self.loadBatchButton.clicked.connect(self.load_next_batch_clicked)
 
+        # Add load selected button
+        self.loadSelectedButton = QPushButton("Load Selected Images")  # New button
+        self.loadSelectedButton.clicked.connect(self.load_selected_images)
+
         # Add widgets to layout
         layout.addWidget(self.table_view)
-        layout.addWidget(self.close_button)
+        
         layout.addWidget(self.loadBatchButton)
+        layout.addWidget(self.loadSelectedButton)   
 
         # Ensure the dialog stays on top when clicked
         self.setWindowFlags(Qt.WindowType.Window)
@@ -126,8 +131,29 @@ class DataFrameDialog(QDialog):
 
         # Emit signal to MainWindow to load these images
         self.load_batch_signal.emit(indices_to_load)
-        
 
+    
+    def load_selected_images(self):
+        """ Load images from selected rows in the current sorted view. """
+        selected_indexes = self.table_view.selectionModel().selectedRows()
+        if not selected_indexes:
+            QMessageBox.information(self, "Info", "No rows selected.")
+            return
+
+        indices_to_load = []
+
+        for index in selected_indexes:
+            source_index = self.proxy_model.mapToSource(index)  # Convert sorted index to original
+            row_idx = source_index.row()
+
+            batch_index = self.model.data(self.model.index(row_idx, self.model.dataframe.columns.get_loc("batch_index")), Qt.ItemDataRole.EditRole)
+            image_index = self.model.data(self.model.index(row_idx, self.model.dataframe.columns.get_loc("image_index")), Qt.ItemDataRole.EditRole)
+
+            indices_to_load.append((int(batch_index), int(image_index)))
+
+        # Emit signal to MainWindow to load the selected images
+        self.load_selected_images_signal.emit(indices_to_load)
+        
 
 
     def row_double_clicked(self, index: QModelIndex):
@@ -278,6 +304,7 @@ class MainWindow(QMainWindow):
 
         self.imagesTable.setModel(self.proxy_model)
         self.imagesTable.doubleClicked.connect(self.on_image_table_double_click)
+        self.imagesTable.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)  # Select entire rows
 
 
 
@@ -317,24 +344,31 @@ class MainWindow(QMainWindow):
 
     def on_image_table_double_click(self, index):
         """ Handle double-click on table row and display the selected image. """
-        print("Double-clicked on row:", index)
+        # print("Double-clicked on row:", index.row())
         source_index = self.proxy_model.mapToSource(index) # Convert sorted index to original
         print("source index: ",source_index.row()) 
         row_idx = source_index.row()
 
+
+
         # Retrieve batch_index and image_index from the selected row
-        batch_index = self.stats_dataframe.iloc[row_idx]["batch_index"]
-        image_index = self.stats_dataframe.iloc[row_idx]["image_index"]
+        # batch_index = self.stats_dataframe.iloc[row_idx]["batch_index"]
+        # image_index = self.stats_dataframe.iloc[row_idx]["image_index"]
+        
+        #TODO: Get index from the current view of the table in UI
 
-        self.display_selected_image(batch_index, image_index)
+        self.display_selected_image(row_idx)
 
 
-    def display_selected_image(self, batch_index, image_index):
+    def display_selected_image(self, index):
         """ Display the image corresponding to batch_index and image_index, given selected combo box values. """
-        image_data = self.get_image_data_from_df(batch_index, image_index)
+        # image_data = self.get_image_data_from_df(batch_index, image_index)
+        image_data = self.images_df.iloc[index]
+        # print('image_data:', image_data)
 
         if not image_data.empty:
-            self.current_image_idx = image_data.index[0]
+            self.current_image_idx = index
+            # print("Current image index:", self.current_image_idx)
 
             # get selected combo box values
             background_1 = self.ComboBoxBackground1.currentText()
@@ -352,12 +386,22 @@ class MainWindow(QMainWindow):
             self.canvas_1.display_overlayed_image(B1, F1)
             self.canvas_2.display_overlayed_image(B2, F2)
 
-            self.set_image_labels(batch_index, image_index)
+            self.set_image_labels(image_data['batch_index'], image_data['image_index'])
 
     def update_stats_table(self):
-        """ Update the model and apply filtering when stats_dataframe updates """
-        self.stats_model.update_data(self.stats_dataframe)
-        self.proxy_model.invalidateFilter()  # Reapply the filter
+        """ Update the QTableView to match the order of images_df while showing stats_dataframe info. """
+        if self.images_df.empty:
+            return  # No images to display
+
+        # Create a view of stats_dataframe that only includes loaded images, keeping images_df order
+        filtered_stats = self.images_df[["batch_index", "image_index"]].merge(
+            self.stats_dataframe, on=["batch_index", "image_index"], how="left"
+        )
+
+        # Update the model with the new view
+        self.stats_model.update_data(filtered_stats)
+        self.proxy_model.invalidateFilter()  # Refresh filtering
+
 
     def set_interactive_elements_enabled(self, enabled: bool):
         """Enable or disable all interactive elements."""
@@ -413,6 +457,7 @@ class MainWindow(QMainWindow):
         self.dialog = DataFrameDialog(df, self)
         self.dialog.row_selected.connect(self.dataframe_selection_double_click)  # Connect signal
         self.dialog.load_batch_signal.connect(self.get_images) # Connect signal
+        self.dialog.load_selected_images_signal.connect(self.get_images)  # Connect signal
         self.dialog.show()  # Show as modal popup
 
 
@@ -438,7 +483,7 @@ class MainWindow(QMainWindow):
         if self.current_image_idx == None: return
         row = self.current_image_idx
 
-        print(column)
+        # print(column)
 
         # Dictionary to map column names to their corresponding overlayed image
         metric_mapping = {'Entropy': 'entropy_image', 'Error Mask': 'Error Mask', 'Raw image': 'input_image'}
@@ -473,14 +518,13 @@ class MainWindow(QMainWindow):
 
     
     def compute_errorMask(self, images_df ,row=None) ->np.ndarray:
-        """Computes the Error Mask for an image and sets it in the dataframe_images.
-        Returns a copy of the computed mask for convenience.
+        """Computes the Error Mask for an image and returns the computed mask.
         Parameters:
-            row (optional): The index of the image for which the error mask will be computed and set. Defaults to the index of the current Image if no value or None is passed
+            row (optional): The index of the image for which the error mask will be computed. Defaults to the index of the current Image if no value or None is passed
         Returns:
             mask: the computed mask"""
         
-        print("COMPUTING ERROR MASK")
+        # print("COMPUTING ERROR MASK")
         if row == None: row = self.current_image_idx
         # mask = (self.images_df['prediction_image'][row] != self.images_df['target_image'][row]).astype(np.bool)
         mask = (images_df['prediction_image'][row] != images_df['target_image'][row]).astype(np.bool)
@@ -525,11 +569,8 @@ class MainWindow(QMainWindow):
                    if not self.stats_dataframe[(self.stats_dataframe["batch_index"] == batch_index)
                                                 & (self.stats_dataframe["image_index"] == img_index)]["IsLoaded"].values[0]]
         
-        
         if not indices:
             return pd.DataFrame()
-        
-
         
         images_df = pd.read_json(self.conn.get_images(indices))
 
@@ -541,23 +582,16 @@ class MainWindow(QMainWindow):
         #TODO: Set IsLoaded to True for the loaded images
         self.stats_dataframe.loc[self.stats_dataframe["batch_index"].isin(images_df["batch_index"])
                                  & self.stats_dataframe["image_index"].isin(images_df["image_index"]), "IsLoaded"] = True
-        
-
-        
-
-        # Check if the error mask column exists in the dataframe
-        # if "Error Mask" not in self.images_df.columns:
-        #     self.images_df["Error Mask"] = None
-
-        
+                
+    
         images_df["Error Mask"] = None
         # Compute the error mask for the loaded images
         for row in images_df.index:
-            print("Computing error mask for row", row)
+            # print("Computing error mask for row", row)
             images_df['Error Mask'][row] = self.compute_errorMask(images_df, row)
 
         self.images_df = pd.concat([self.images_df,images_df], ignore_index=True)
-        print(self.images_df)
+        # print(self.images_df)
 
         self.update_stats_table()  # Refresh the table
 
@@ -598,65 +632,60 @@ class MainWindow(QMainWindow):
         #TODO: Could be optimized if we require only one image at a time (at DataFrameDialog)
 
         indices = [(int(row[0]), int(row[1])) for row in surrounding_rows]
-        print("Indices:", indices)
-
-
+        # print("Indices:", indices)
         # indices = [(int(selected_row[0]), int(selected_row[1]))]
 
         # Get images from server
         _ = self.get_images(indices)
 
-        # print(self.images_df)
+    
+    def get_sorted_index_from_images_df(self, original_index):
+        """ Get the current index of an image in the sorted QTableView. """
+        for sorted_row in range(self.proxy_model.rowCount()):
+            source_index = self.proxy_model.mapToSource(self.proxy_model.index(sorted_row, 0))
+            if source_index.row() == original_index:
+                return sorted_row  # Return the index in the sorted view
+        return None  # If not found
 
-
-        # # Display the selected image
-        # self.selected_image_data = self.get_image_data_from_df(int(selected_row[0]), int(selected_row[1]))
-        # self.current_image_idx = self.selected_image_data.index[0]
-        # print("index", self.current_image_idx)
-        # self.canvas_1.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
-        # self.canvas_2.display_overlayed_image(self.selected_image_data['input_image'].values[0], self.selected_image_data['entropy_image'].values[0])
-        # self.set_image_labels()
-        
-
+    def get_original_index_from_sorted_table(self, sorted_index):
+        """ Get the original images_df index from the sorted QTableView. """
+        source_index = self.proxy_model.mapToSource(self.proxy_model.index(sorted_index, 0))
+        return source_index.row()  # Return the original row index
 
 
 
     def next_image_click(self):
-        # Get the next image
-        
-        if self.current_image_idx == len(self.images_df)-1:
-            return
-        
-        self.current_image_idx += 1
-        # Make sure the previous button is enabled
-        # self.prevButton.setEnabled(True)
+        """ Move to the next image based on the current sorted order. """
+        if self.current_image_idx is None:
+            return  # No image selected
 
-        print("current image index", self.current_image_idx)
-            
-        image_data = self.images_df.iloc[self.current_image_idx]
-        self.display_selected_image(image_data["batch_index"], image_data["image_index"])
+        # ✅ Get the current sorted index in the table
+        sorted_index = self.get_sorted_index_from_images_df(self.current_image_idx)
+        if sorted_index is None or sorted_index >= len(self.images_df) - 1:
+            return  # Already at the last image
 
+        # ✅ Move to the next image in the sorted order
+        next_sorted_index = sorted_index + 1
+        next_original_index = self.get_original_index_from_sorted_table(next_sorted_index)
 
-        self.set_image_labels(image_data["batch_index"], image_data["image_index"])
-
+        if next_original_index is not None:
+            self.display_selected_image(next_original_index)
 
     def prev_image_click(self):
-        # Get the previous image
-        
-        if self.current_image_idx == 0:
-            return
-        
-        self.current_image_idx -= 1
+        """ Move to the previous image based on the current sorted order. """
+        if self.current_image_idx is None:
+            return  # No image selected
 
-        # Make sure the next button is enabled
-        # self.nextButton.setEnabled(True)
+        sorted_index = self.get_sorted_index_from_images_df(self.current_image_idx)
+        if sorted_index is None or sorted_index <= 0:
+            return  # Already at the first image
 
-        print("current image index", self.current_image_idx)
+        prev_sorted_index = sorted_index - 1
+        prev_original_index = self.get_original_index_from_sorted_table(prev_sorted_index)
 
-        image_data = self.images_df.iloc[self.current_image_idx]
-        self.display_selected_image(image_data["batch_index"], image_data["image_index"])
+        if prev_original_index is not None:
+            self.display_selected_image(prev_original_index)
 
-        self.set_image_labels(image_data["batch_index"], image_data["image_index"])
 
 
     def dummy_load_image(self):
