@@ -502,11 +502,14 @@ class MainWindow(QMainWindow):
     def populate_comboboxes(self):
         """Populate the comboboxes with the columns of the dataframe_images"""
         # Setup the ComboBoxes for fore-/background selection
-        combobox_options = self._GetComboBoxOptions()
-        self.ComboBoxBackground1.addItems(combobox_options)
-        self.ComboBoxBackground2.addItems(combobox_options)
-        self.ComboBoxForeground1.addItems(combobox_options)
-        self.ComboBoxForeground2.addItems(combobox_options)
+        foreground_options = ['Entropy','Counter-probability','Error Mask','Ground Truth','Prediction']
+        background_options = ['Raw image','Entropy','Counter-probability','Error Mask','Ground Truth','Prediction']
+        
+        # combobox_options = self._GetComboBoxOptions()
+        self.ComboBoxBackground1.addItems(background_options)
+        self.ComboBoxBackground2.addItems(background_options)
+        self.ComboBoxForeground1.addItems(foreground_options)
+        self.ComboBoxForeground2.addItems(foreground_options)
 
     def _GetComboBoxOptions(self) -> list[str]:
         #needs the columns 0 and 1 to be index cols and -1 to be IsLoaded helper column 
@@ -519,7 +522,9 @@ class MainWindow(QMainWindow):
     def map_metric_to_image(self, metric:str, row:int) -> np.ndarray:
         """Maps the column name to the corresponding image in the dataframe_images"""
         # Dictionary to map column names to their corresponding image
-        metric_mapping = {'Entropy': 'entropy_image', 'Error Mask': 'Error Mask', 'Raw image': 'input_image'}
+        metric_mapping = {'Entropy': 'entropy_image', 'Error Mask': 'Error Mask', 'Raw image': 'input_image',
+                          'Perplexity': 'perplexity_image', 'Counter-probability': 'assuredness_image',
+                          'Ground Truth': 'target_image', 'Prediction': 'prediction_image'}
         return self.images_df[metric_mapping[metric]][row]
     
 
@@ -531,10 +536,12 @@ class MainWindow(QMainWindow):
         row = self.current_image_idx
 
         # Dictionary to map column names to their corresponding overlayed image
-        metric_mapping = {'Entropy': 'entropy_image', 'Error Mask': 'Error Mask', 'Raw image': 'input_image'}
+        metric_mapping = {'Entropy': 'entropy_image', 'Error Mask': 'Error Mask', 'Raw image': 'input_image',
+                          'Perplexity': 'perplexity_image', 'Counter-probability': 'assuredness_image',
+                          'Ground Truth': 'target_image', 'Prediction': 'prediction_image'}
 
         #Create the error mask if we want it and it does not yet exist
-        if (column == "Error Mask") and (bool(self.images_df.iloc[row].isna()['Error Mask'])): self.compute_errorMask(row)
+        # if (column == "Error Mask") and (bool(self.images_df.iloc[row].isna()['Error Mask'])): self.compute_errorMask(row)
         match canvas:
             case 1:
                 background_column = metric_mapping[self.ComboBoxBackground1.currentText()]
