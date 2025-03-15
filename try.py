@@ -344,7 +344,8 @@ class MainWindow(QMainWindow):
         self.nextButton.clicked.connect(self.next_image_click)
         self.prevButton.clicked.connect(self.prev_image_click)
         self.dummyLoadButton.clicked.connect(self.dummy_load_image)
-        self.ThresholdSlider_1.valueChanged.connect(self.slider_value_changed)
+        self.ThresholdSlider_1.valueChanged.connect(lambda: self.slider_value_changed(self.ThresholdSlider_1.value(),1))
+        self.ThresholdSlider_2.valueChanged.connect(lambda: self.slider_value_changed(self.ThresholdSlider_2.value(),2))
 
         self.ComboBoxBackground1.currentTextChanged.connect(lambda: self.dropdown_change(column = self.ComboBoxBackground1.currentText(),canvas = 1))
         self.ComboBoxBackground2.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxBackground2.currentText(),2))
@@ -382,6 +383,8 @@ class MainWindow(QMainWindow):
         image_data = self.images_df.iloc[index]
         # print('image_data:', image_data)
 
+
+
         if not image_data.empty:
             self.current_image_idx = index
             # print("Current image index:", self.current_image_idx)
@@ -403,6 +406,10 @@ class MainWindow(QMainWindow):
             self.canvas_2.display_overlayed_image(B2, F2)
 
             self.set_image_labels(image_data['batch_index'], image_data['image_index'])
+
+            # Reset sliders
+            self.ThresholdSlider_1.setValue(0)
+            self.ThresholdSlider_2.setValue(0)
 
     def update_stats_table(self):
         """ Update the QTableView to match the order of images_df while showing stats_dataframe info. """
@@ -713,7 +720,7 @@ class MainWindow(QMainWindow):
         self.canvas_2.display_overlayed_image(self.input_image, self.uncertainty_image)
 
 
-    def slider_value_changed(self, value):
+    def slider_value_changed(self, value, canvas):
         """
         Handle the slider change event .
         Args:
@@ -723,18 +730,30 @@ class MainWindow(QMainWindow):
         def map_value(value, in_min, in_max, out_min, out_max):
             """Linearly maps a value from one range to another."""
             return out_min + (float(value - in_min) / (in_max - in_min)) * (out_max - out_min)
+        
+        match canvas:
+            case 1:
+                background_metric = self.ComboBoxBackground1.currentText()
+                foreground_metric = self.ComboBoxForeground1.currentText()
+                canvas = self.canvas_1
+            case 2:
+                background_metric = self.ComboBoxBackground2.currentText()
+                foreground_metric = self.ComboBoxForeground2.currentText()
+                canvas = self.canvas_2
+
+        background_image = self.map_metric_to_image(background_metric, self.current_image_idx)
+        overlay_image = self.map_metric_to_image(foreground_metric, self.current_image_idx)
 
         # Map the slider value to the range of the entropy values
-        min_entropy = self.uncertainty_image.min()
-        max_entropy = self.uncertainty_image.max()
-        threshold = map_value(value, 0, 100, min_entropy, max_entropy)
-
+        min_value = overlay_image.min()
+        max_value = overlay_image.max()
+        threshold = map_value(value, 0, 100, min_value, max_value)
 
         # threshold the uncertainty image
-        thresholded_image = self.threshold_image(self.uncertainty_image, threshold)
+        thresholded_image = self.threshold_image(overlay_image, threshold)
 
         # Display the thresholded image overlayed on the input image
-        self.canvas_1.display_overlayed_image(self.input_image, thresholded_image)
+        canvas.display_overlayed_image(background_image, thresholded_image)
 
 
 
