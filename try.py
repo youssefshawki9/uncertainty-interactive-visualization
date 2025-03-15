@@ -49,7 +49,7 @@ class CustomSortFilterProxyModel(QSortFilterProxyModel):
         return value  # Fallback
 
 class DataFrameDialog(QDialog):
-    row_selected = pyqtSignal(list,list)  # Signal to send selected row data
+    row_selected = pyqtSignal(list)  # Signal to send selected row data
     load_batch_signal = pyqtSignal(list)  # Signal to load next batch of images
     load_selected_images_signal = pyqtSignal(list)  # Signal for loading selected images
 
@@ -160,39 +160,35 @@ class DataFrameDialog(QDialog):
         """ Emit the selected row along with correctly sorted surrounding rows """
 
         # Get the correct row in the sorted view
-        sorted_row_idx = index.row()  
+        # sorted_row_idx = index.row()  
         source_index = self.proxy_model.mapToSource(index)  # Convert to original index
         original_row_idx = source_index.row()  # Get correct row index
 
-        # Get first and last visible row in sorted order
-        first_visible_sorted = self.table_view.indexAt(self.table_view.rect().topLeft()).row()
-        last_visible_sorted = self.table_view.indexAt(self.table_view.rect().bottomLeft()).row()
+        # # Get first and last visible row in sorted order
+        # first_visible_sorted = self.table_view.indexAt(self.table_view.rect().topLeft()).row()
+        # last_visible_sorted = self.table_view.indexAt(self.table_view.rect().bottomLeft()).row()
 
-        if last_visible_sorted == -1:  # If last row isn't fully visible, adjust
-            last_visible_sorted = self.proxy_model.rowCount() - 1
+        # if last_visible_sorted == -1:  # If last row isn't fully visible, adjust
+        #     last_visible_sorted = self.proxy_model.rowCount() - 1
 
-        # Define the window of rows (±2 rows around selected)
-        window_size = 0
-        start_sorted_idx = max(first_visible_sorted, sorted_row_idx - window_size)
-        end_sorted_idx = min(last_visible_sorted, sorted_row_idx + window_size)
+        # # Define the window of rows (±2 rows around selected)
+        # window_size = 0
+        # start_sorted_idx = max(first_visible_sorted, sorted_row_idx - window_size)
+        # end_sorted_idx = min(last_visible_sorted, sorted_row_idx + window_size)
 
-        # Convert sorted indices to original dataframe indices
-        surrounding_rows = []
-        for i in range(start_sorted_idx, end_sorted_idx + 1):
-            source_row = self.proxy_model.mapToSource(self.proxy_model.index(i, 0)).row()  # Get original row
-            row_data = [self.model.data(self.model.index(source_row, col)) for col in range(self.model.columnCount())]
-            surrounding_rows.append(row_data)
+        # # Convert sorted indices to original dataframe indices
+        # surrounding_rows = []
+        # for i in range(start_sorted_idx, end_sorted_idx + 1):
+        #     source_row = self.proxy_model.mapToSource(self.proxy_model.index(i, 0)).row()  # Get original row
+        #     row_data = [self.model.data(self.model.index(source_row, col)) for col in range(self.model.columnCount())]
+        #     surrounding_rows.append(row_data)
 
         # Get selected row data
         selected_row_data = [self.model.data(self.model.index(original_row_idx, col)) for col in range(self.model.columnCount())]
 
         # Emit both selected and surrounding rows
-        self.row_selected.emit(selected_row_data, surrounding_rows)
+        self.row_selected.emit(selected_row_data)
 
-    def get_window_rows_data(self):
-        """ Get the data of a window of rows around the selected row """
-        selected_row = self.table_view.selectedIndexes()[0].row()
-        window_size = 5  # Number of rows to show around the selected row
 
 
 
@@ -246,6 +242,7 @@ class ImageCanvas(FigureCanvas):
         self.ax.axis('off')
         super().__init__(fig)
         self.setParent(parent)
+        self.binary = False
 
     def display_image(self, image_array):
         """
@@ -261,7 +258,7 @@ class ImageCanvas(FigureCanvas):
 
     def display_overlayed_image(self, input_image, overlay_image):
         """
-        Display an overlayed image with transparency using Otsu's thresholding.
+        Display an overlayed image with transparency, applying binarization if enabled.
         
         Args:
             input_image (np.ndarray): The input image.
@@ -270,19 +267,27 @@ class ImageCanvas(FigureCanvas):
         self.ax.clear()  # Clear any existing content
         self.ax.imshow(input_image, cmap='gray', aspect='auto')  # Plot the input image
 
-        threshold = 0.1
+        threshold = 0.1  # Default threshold for transparency
 
-        # Normalize overlay image
-        norm = mcolors.Normalize(vmin=np.min(overlay_image), vmax=np.max(overlay_image))
-        
-        # Get the seismic colormap
-        cmap = cm.get_cmap('seismic')
-        
-        # Apply colormap to the normalized overlay image
-        overlay_rgba = cmap(norm(overlay_image))  # Converts to RGBA
+        if self.binary:
+            binarized_overlay = (overlay_image > threshold).astype(np.uint8)
 
-        # Make values below Otsu's threshold transparent
-        overlay_rgba[overlay_image < threshold, 3] = 0  # Set alpha to 0 for low entropy values
+            # Show overlay as a single color instead of a colormap
+            overlay_rgba = np.zeros((*binarized_overlay.shape, 4))  # Create an RGBA array
+            overlay_rgba[binarized_overlay == 1] = [1, 1, 0, 0.6]  # Yellow color with transparency
+
+        else:
+            # Normalize overlay image for colormap
+            norm = mcolors.Normalize(vmin=np.min(overlay_image), vmax=np.max(overlay_image))
+            
+            # Get the seismic colormap
+            cmap = cm.get_cmap('seismic')
+            
+            # Apply colormap to the normalized overlay image
+            overlay_rgba = cmap(norm(overlay_image))  # Converts to RGBA
+
+            # Make values below threshold transparent
+            overlay_rgba[overlay_image < threshold, 3] = 0  # Set alpha to 0 for low entropy values
 
         # Plot the overlay image
         self.ax.imshow(overlay_rgba, aspect='auto')
@@ -352,12 +357,54 @@ class MainWindow(QMainWindow):
         self.ComboBoxForeground1.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxForeground1.currentText(),1))
         self.ComboBoxForeground2.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxForeground2.currentText(),2))
 
+        self.checkBoxBinarize1.checkStateChanged.connect(self.onCheckboxChange)
+        self.checkBoxBinarize2.checkStateChanged.connect(self.onCheckboxChange)
+
+
         # Start polling for dataframe
         self.stats_dataframe = None
         self.start_dataframe_loading()
 
+    # def onCheckboxChange(self, state):
+    #     """ Toggle binarization state in the corresponding ImageCanvas. """
+    #     sender = self.sender()
 
-        
+    #     if sender == self.checkBoxBinarize1:
+    #         self.canvas_1.binary = state == Qt.CheckState.Checked  # ✅ Update binarization state
+    #         foreground_metric = self.ComboBoxForeground1.currentText()
+    #         background_metric = self.ComboBoxBackground1.currentText()
+    #         self.canvas_1.display_overlayed_image(self.current_background, self.current_foreground)
+
+    #     elif sender == self.checkBoxBinarize2:
+    #         self.canvas_2.binary = state == Qt.CheckState.Checked  # ✅ Update binarization state
+    #         self.canvas_2.display_overlayed_image(self.current_background, self.current_foreground)
+
+
+    def onCheckboxChange(self, state):
+        """ Handle checkbox state change and apply binarization if checked. """
+        sender = self.sender()  # Get the checkbox that triggered the event
+        canvas = None
+
+        if sender == self.checkBoxBinarize1:
+            self.canvas_1.binary = state == Qt.CheckState.Checked  # ✅ Update binarization state
+            foreground_metric = self.ComboBoxForeground1.currentText()
+            background_metric = self.ComboBoxBackground1.currentText()
+            canvas = self.canvas_1
+        elif sender == self.checkBoxBinarize2:
+            self.canvas_2.binary = state == Qt.CheckState.Checked  # ✅ Update binarization state
+            foreground_metric = self.ComboBoxForeground2.currentText()
+            background_metric = self.ComboBoxBackground2.currentText()
+            canvas = self.canvas_2
+
+        if self.current_image_idx is None or canvas is None:
+            return  # No image selected or invalid canvas
+
+        # Get the images based on selected dropdown values
+        background_image = self.map_metric_to_image(background_metric, self.current_image_idx)
+        foreground_image = self.map_metric_to_image(foreground_metric, self.current_image_idx)
+
+        canvas.display_overlayed_image(background_image, foreground_image)  # Display the images
+
 
     def on_image_table_double_click(self, index):
         """ Handle double-click on table row and display the selected image. """
@@ -410,6 +457,9 @@ class MainWindow(QMainWindow):
             # Reset sliders
             self.ThresholdSlider_1.setValue(0)
             self.ThresholdSlider_2.setValue(0)
+
+
+
 
     def update_stats_table(self):
         """ Update the QTableView to match the order of images_df while showing stats_dataframe info. """
@@ -505,8 +555,6 @@ class MainWindow(QMainWindow):
         Assumes Column Error mask already exists in the dataframe"""
         if self.current_image_idx == None: return
         row = self.current_image_idx
-
-        # print(column)
 
         # Dictionary to map column names to their corresponding overlayed image
         metric_mapping = {'Entropy': 'entropy_image', 'Error Mask': 'Error Mask', 'Raw image': 'input_image'}
@@ -650,13 +698,12 @@ class MainWindow(QMainWindow):
 
 
 
-    def dataframe_selection_double_click(self, selected_row, surrounding_rows):
+    def dataframe_selection_double_click(self, selected_row):
         """ Load selected image from server to local dataframe """
         #TODO: Could be optimized if we require only one image at a time (at DataFrameDialog)
 
-        indices = [(int(row[0]), int(row[1])) for row in surrounding_rows]
         # print("Indices:", indices)
-        # indices = [(int(selected_row[0]), int(selected_row[1]))]
+        indices = [(int(selected_row[0]), int(selected_row[1]))]
 
         # Get images from server
         _ = self.get_images(indices)
@@ -722,7 +769,7 @@ class MainWindow(QMainWindow):
 
     def slider_value_changed(self, value, canvas):
         """
-        Handle the slider change event .
+        Handle the slider change event . 
         Args:
             value (int): The new value of the slider.
         """
