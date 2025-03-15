@@ -345,12 +345,12 @@ class MainWindow(QMainWindow):
         # Connect the button
         # self.pushButton.clicked.connect(self.on_button_click)
         self.pushButton_2.clicked.connect(self.clear_button_click)
-        self.loadBatchButton.clicked.connect(self.load_batch_click)
+
         self.nextButton.clicked.connect(self.next_image_click)
         self.prevButton.clicked.connect(self.prev_image_click)
-        self.dummyLoadButton.clicked.connect(self.dummy_load_image)
-        self.ThresholdSlider_1.valueChanged.connect(lambda: self.slider_value_changed(self.ThresholdSlider_1.value(),1))
-        self.ThresholdSlider_2.valueChanged.connect(lambda: self.slider_value_changed(self.ThresholdSlider_2.value(),2))
+
+        self.ThresholdSlider_1.valueChanged.connect(self.slider_value_changed)
+        self.ThresholdSlider_2.valueChanged.connect(self.slider_value_changed)
 
         self.ComboBoxBackground1.currentTextChanged.connect(lambda: self.dropdown_change(column = self.ComboBoxBackground1.currentText(),canvas = 1))
         self.ComboBoxBackground2.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxBackground2.currentText(),2))
@@ -364,20 +364,6 @@ class MainWindow(QMainWindow):
         # Start polling for dataframe
         self.stats_dataframe = None
         self.start_dataframe_loading()
-
-    # def onCheckboxChange(self, state):
-    #     """ Toggle binarization state in the corresponding ImageCanvas. """
-    #     sender = self.sender()
-
-    #     if sender == self.checkBoxBinarize1:
-    #         self.canvas_1.binary = state == Qt.CheckState.Checked  # ✅ Update binarization state
-    #         foreground_metric = self.ComboBoxForeground1.currentText()
-    #         background_metric = self.ComboBoxBackground1.currentText()
-    #         self.canvas_1.display_overlayed_image(self.current_background, self.current_foreground)
-
-    #     elif sender == self.checkBoxBinarize2:
-    #         self.canvas_2.binary = state == Qt.CheckState.Checked  # ✅ Update binarization state
-    #         self.canvas_2.display_overlayed_image(self.current_background, self.current_foreground)
 
 
     def onCheckboxChange(self, state):
@@ -408,19 +394,8 @@ class MainWindow(QMainWindow):
 
     def on_image_table_double_click(self, index):
         """ Handle double-click on table row and display the selected image. """
-        # print("Double-clicked on row:", index.row())
         source_index = self.proxy_model.mapToSource(index) # Convert sorted index to original
-        print("source index: ",source_index.row()) 
         row_idx = source_index.row()
-
-
-
-        # Retrieve batch_index and image_index from the selected row
-        # batch_index = self.stats_dataframe.iloc[row_idx]["batch_index"]
-        # image_index = self.stats_dataframe.iloc[row_idx]["image_index"]
-        
-        #TODO: Get index from the current view of the table in UI
-
         self.display_selected_image(row_idx)
 
 
@@ -496,15 +471,6 @@ class MainWindow(QMainWindow):
         self.timer.start(1500)  # Check every 1.5 seconds
 
 
-    def populate_comboboxes(self):
-        """Populate the comboboxes with the columns of the dataframe_images"""
-        # Setup the ComboBoxes for fore-/background selection
-        combobox_options = self._GetComboBoxOptions()
-        self.ComboBoxBackground1.addItems(combobox_options)
-        self.ComboBoxBackground2.addItems(combobox_options)
-        self.ComboBoxForeground1.addItems(combobox_options)
-        self.ComboBoxForeground2.addItems(combobox_options)
-
     def check_dataframe(self):
         """ Fetch dataframe if available and stop timer once received """
         df = self.conn.get_dataframe()
@@ -529,10 +495,18 @@ class MainWindow(QMainWindow):
         """ Open the popup window to display the dataframe """
         self.dialog = DataFrameDialog(df, self)
         self.dialog.row_selected.connect(self.dataframe_selection_double_click)  # Connect signal
-        self.dialog.load_batch_signal.connect(self.get_images) # Connect signal
-        self.dialog.load_selected_images_signal.connect(self.get_images)  # Connect signal
+        self.dialog.load_batch_signal.connect(self.load_images_from_server) # Connect signal
+        self.dialog.load_selected_images_signal.connect(self.load_images_from_server)  # Connect signal
         self.dialog.show()  # Show as modal popup
 
+    def populate_comboboxes(self):
+        """Populate the comboboxes with the columns of the dataframe_images"""
+        # Setup the ComboBoxes for fore-/background selection
+        combobox_options = self._GetComboBoxOptions()
+        self.ComboBoxBackground1.addItems(combobox_options)
+        self.ComboBoxBackground2.addItems(combobox_options)
+        self.ComboBoxForeground1.addItems(combobox_options)
+        self.ComboBoxForeground2.addItems(combobox_options)
 
     def _GetComboBoxOptions(self) -> list[str]:
         #needs the columns 0 and 1 to be index cols and -1 to be IsLoaded helper column 
@@ -610,12 +584,6 @@ class MainWindow(QMainWindow):
         self.imageLabel.setText(f"Image: {img_index}")
 
 
-    # def on_button_click(self):
-    #     image = self.conn.get_image(self.batch_index, self.img_index)
-
-    #     self.canvas_1.display_image(np.array(image)[0])
-    #     self.canvas_2.display_image(np.array(image)[0])
-
     def clear_button_click(self):
         self.canvas_1.ax.clear()
         self.canvas_1.ax.axis('off')
@@ -625,15 +593,11 @@ class MainWindow(QMainWindow):
         self.canvas_2.ax.axis('off')
         self.canvas_2.draw()
 
-        self.batch_index = -1
-        self.img_index = 0
-
         self.set_image_labels()
 
 
-    def get_images(self, indices: list[tuple[int, int]]) -> pd.DataFrame:
+    def load_images_from_server(self, indices: list[tuple[int, int]]) -> pd.DataFrame:
         """ Get images from the server given a list of indices. """
-        #TODO: Optimize by keeping the part of dataframe that is being loaded to set IsLoaded to True
 
         # Get only the images that are not already loaded
         indices = [(batch_index, img_index) for batch_index, img_index in indices
@@ -650,7 +614,7 @@ class MainWindow(QMainWindow):
             if col.endswith("_image"):
                 images_df[col] = images_df[col].apply(lambda x: np.array(x))
 
-        #TODO: Set IsLoaded to True for the loaded images
+        # Set IsLoaded to True for the loaded images
         self.stats_dataframe.loc[self.stats_dataframe["batch_index"].isin(images_df["batch_index"])
                                  & self.stats_dataframe["image_index"].isin(images_df["image_index"]), "IsLoaded"] = True
                 
@@ -666,8 +630,6 @@ class MainWindow(QMainWindow):
 
         self.update_stats_table()  # Refresh the table
 
-
-        return images_df
     
 
     def get_image_data_from_df(self, batch_index, img_index) -> pd.DataFrame: 
@@ -680,33 +642,12 @@ class MainWindow(QMainWindow):
 
 
 
-    # dummy function for testing getting images from server
-    def load_batch_click(self):
-        self.batch_index = 3
-        self.img_index = 4
-        # put batch_index and img_index in a tuple
-        indices = [(self.batch_index, self.img_index)]
-        images_df = pd.read_json(self.conn.get_images(indices))
-        image_data = images_df[(images_df["batch_index"] == self.batch_index)
-                                 & (images_df["image_index"] == self.img_index)]
-        self.input_image = np.array(image_data["input_image"].values[0])
-        self.uncertainty_image = np.array(image_data["entropy_image"].values[0])
-        self.canvas_1.display_overlayed_image(self.input_image, self.uncertainty_image)
-
-
-        self.set_image_labels()
-
-
-
     def dataframe_selection_double_click(self, selected_row):
         """ Load selected image from server to local dataframe """
-        #TODO: Could be optimized if we require only one image at a time (at DataFrameDialog)
 
-        # print("Indices:", indices)
         indices = [(int(selected_row[0]), int(selected_row[1]))]
-
         # Get images from server
-        _ = self.get_images(indices)
+        self.load_images_from_server(indices)
 
     
     def get_sorted_index_from_images_df(self, original_index):
@@ -729,12 +670,12 @@ class MainWindow(QMainWindow):
         if self.current_image_idx is None:
             return  # No image selected
 
-        # ✅ Get the current sorted index in the table
+        # Get the current sorted index in the table
         sorted_index = self.get_sorted_index_from_images_df(self.current_image_idx)
         if sorted_index is None or sorted_index >= len(self.images_df) - 1:
             return  # Already at the last image
 
-        # ✅ Move to the next image in the sorted order
+        # Move to the next image in the sorted order
         next_sorted_index = sorted_index + 1
         next_original_index = self.get_original_index_from_sorted_table(next_sorted_index)
 
@@ -757,36 +698,28 @@ class MainWindow(QMainWindow):
             self.display_selected_image(prev_original_index)
 
 
-
-    def dummy_load_image(self):
-        self.input_image = torch.load("data/input_image.pt").numpy()
-        self.uncertainty_image = torch.load("data/entropy.pt").numpy()
-
-        
-        self.canvas_1.display_overlayed_image(self.input_image, self.uncertainty_image)
-        self.canvas_2.display_overlayed_image(self.input_image, self.uncertainty_image)
-
-
-    def slider_value_changed(self, value, canvas):
+    def slider_value_changed(self, value):
         """
         Handle the slider change event . 
         Args:
             value (int): The new value of the slider.
         """
 
+        sender = self.sender()  # Get the slider that triggered the event
+        canvas = None
+
         def map_value(value, in_min, in_max, out_min, out_max):
             """Linearly maps a value from one range to another."""
             return out_min + (float(value - in_min) / (in_max - in_min)) * (out_max - out_min)
-        
-        match canvas:
-            case 1:
-                background_metric = self.ComboBoxBackground1.currentText()
-                foreground_metric = self.ComboBoxForeground1.currentText()
-                canvas = self.canvas_1
-            case 2:
-                background_metric = self.ComboBoxBackground2.currentText()
-                foreground_metric = self.ComboBoxForeground2.currentText()
-                canvas = self.canvas_2
+                
+        if sender == self.ThresholdSlider_1:
+            background_metric = self.ComboBoxBackground1.currentText()
+            foreground_metric = self.ComboBoxForeground1.currentText()
+            canvas = self.canvas_1
+        elif sender == self.ThresholdSlider_2:
+            background_metric = self.ComboBoxBackground2.currentText()
+            foreground_metric = self.ComboBoxForeground2.currentText()
+            canvas = self.canvas_2
 
         background_image = self.map_metric_to_image(background_metric, self.current_image_idx)
         overlay_image = self.map_metric_to_image(foreground_metric, self.current_image_idx)
