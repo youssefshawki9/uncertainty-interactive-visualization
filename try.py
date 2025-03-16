@@ -12,9 +12,11 @@ from PyQt6.QtCore import Qt, QAbstractTableModel
 import pandas as pd
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableView, QPushButton, QMessageBox
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableView, QPushButton, QMessageBox,QGroupBox, QLabel
 from PyQt6.QtCore import QSortFilterProxyModel, QModelIndex
 import pandas as pd
+from torchmetrics.functional import precision_recall_curve
+from scipy.stats import pearsonr
 
 
 
@@ -55,7 +57,7 @@ class DataFrameDialog(QDialog):
 
     def __init__(self, dataframe, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("DataFrame Viewer")
+        self.setWindowTitle("Server Data")
         self.resize(500,300)
 
         self.last_loaded_index = 0  # Track last loaded index for current sorting
@@ -212,6 +214,9 @@ class DataFrameModel(QAbstractTableModel):
         value = self.dataframe.iloc[index.row(), index.column()]
 
         if role == Qt.ItemDataRole.DisplayRole:
+                    # Format floats to 3 decimal places while preserving non-floats
+            if isinstance(value, (float, np.float32, np.float64)):
+                return f"{value:.3f}"
             return str(value)  # Display values as strings in the UI
 
         if role == Qt.ItemDataRole.EditRole:
@@ -360,10 +365,78 @@ class MainWindow(QMainWindow):
         self.checkBoxBinarize1.checkStateChanged.connect(self.onCheckboxChange)
         self.checkBoxBinarize2.checkStateChanged.connect(self.onCheckboxChange)
 
+        self.setup_statistics_ui()
+
 
         # Start polling for dataframe
         self.stats_dataframe = None
         self.start_dataframe_loading()
+
+
+    def update_statistics(self):
+        """ Update the statistics displayed in the UI. """
+        if self.current_image_idx is None:
+            return
+        
+        entropy_image = self.map_metric_to_image("Entropy", self.current_image_idx)
+        counter_probability_image = self.map_metric_to_image("Counter-probability", self.current_image_idx)
+        error_mask = self.map_metric_to_image("Error Mask", self.current_image_idx)
+
+        # Compute the best threshold and F1 score
+        best_threshold, f1_score = self.compute_best_threshold(entropy_image, error_mask)
+        self.EntropyF1ScoreLabel.setText(f"F1 Score: {f1_score:.2f}")
+        self.bestEntropyThresholdLabel.setText(f"Best Threshold: {best_threshold:.2f}")
+        self.entropyPearsonLabel.setText(f"Entropy Correlation: {self.compute_pearson_correlation(entropy_image, error_mask):.2f}")
+        self.counterProbPearsonLabel.setText(f"Counter-probability Correlation: {self.compute_pearson_correlation(counter_probability_image, error_mask):.2f}")
+        
+        
+
+
+    def setup_statistics_ui(self):
+        """ Create a UI section for displaying uncertainty-related image statistics. """
+        # self.statsGroupBox = QGroupBox("Uncertainty Statistics") 
+        self.statsLayout = QVBoxLayout()
+
+        # Create QLabel widgets for different uncertainty statistics
+        self.bestEntropyThresholdLabel = QLabel("Best Threshold: 0.0")
+        self.EntropyF1ScoreLabel = QLabel("F1 Score: 0.0")
+        self.entropyPearsonLabel = QLabel("Entropy Correlation: 0.0")
+        self.counterProbPearsonLabel = QLabel("Counter-probability Correlation: 0.0")
+
+        # Add labels to layout
+        self.statsLayout.addWidget(self.bestEntropyThresholdLabel)
+        self.statsLayout.addWidget(self.EntropyF1ScoreLabel)
+        self.statsLayout.addWidget(self.entropyPearsonLabel)
+        self.statsLayout.addWidget(self.counterProbPearsonLabel)
+
+        self.statsGroupBox.setLayout(self.statsLayout)
+
+    def compute_pearson_correlation(self, uncertainty: np.ndarray, error_mask: np.ndarray) -> float:
+        """Compute Pearson correlation between uncertainty and error mask."""
+        return pearsonr(uncertainty.flatten(), error_mask.flatten())[0]
+    
+    def compute_best_threshold(self, uncertainty_image, error_mask):
+        """ Compute the best threshold for the given image and target. """
+        # Convert the images to tensors
+        uncertainty_image = torch.tensor(uncertainty_image)
+        error_mask = torch.tensor(error_mask)
+
+        # Flatten the error mask and entropy tensor
+        error_mask_flat = error_mask.flatten()
+        uncertainty_image_flat = uncertainty_image.flatten()
+
+        # Calculate precision and recall for different thresholds
+        precision, recall, thresholds = precision_recall_curve(uncertainty_image_flat, error_mask_flat, task='binary')
+
+        # Calculate F1 score for each threshold
+        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
+
+        # Get the index of the best threshold (highest F1 score)
+        best_threshold_idx = f1_scores.argmax()
+        best_threshold = thresholds[best_threshold_idx]
+
+        return best_threshold, f1_scores[best_threshold_idx]
+
 
 
     def onCheckboxChange(self, state):
@@ -405,6 +478,7 @@ class MainWindow(QMainWindow):
         image_data = self.images_df.iloc[index]
         # print('image_data:', image_data)
 
+        
 
 
         if not image_data.empty:
@@ -428,6 +502,8 @@ class MainWindow(QMainWindow):
             self.canvas_2.display_overlayed_image(B2, F2)
 
             self.set_image_labels(image_data['batch_index'], image_data['image_index'])
+
+            self.update_statistics()
 
             # Reset sliders
             self.ThresholdSlider_1.setValue(0)
@@ -454,10 +530,10 @@ class MainWindow(QMainWindow):
     def set_interactive_elements_enabled(self, enabled: bool):
         """Enable or disable all interactive elements."""
         self.pushButton_2.setEnabled(enabled)
-        self.loadBatchButton.setEnabled(enabled)
+        
         self.nextButton.setEnabled(enabled)
         self.prevButton.setEnabled(enabled)
-        self.dummyLoadButton.setEnabled(enabled)
+        
         self.ThresholdSlider_1.setEnabled(enabled)
         self.ComboBoxBackground1.setEnabled(enabled)
         self.ComboBoxBackground2.setEnabled(enabled)
@@ -469,6 +545,7 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.check_dataframe)
         self.timer.start(1500)  # Check every 1.5 seconds
+        
 
 
     def check_dataframe(self):
@@ -587,8 +664,8 @@ class MainWindow(QMainWindow):
 
     def set_image_labels(self, batch_index=None, img_index=None):
         """ Set the labels for the current image """
-        self.batchLabel.setText(f"Batch: {batch_index}")
-        self.imageLabel.setText(f"Image: {img_index}")
+        self.batchLabel.setText(f"Batch {batch_index}")
+        self.imageLabel.setText(f"Image {img_index}")
 
 
     def clear_button_click(self):
