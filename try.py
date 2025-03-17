@@ -1,6 +1,6 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QHeaderView
-from PyQt6 import uic  # For loading .ui files dynamically
+from PyQt6.QtWidgets import QApplication, QMainWindow
+from PyQt6 import uic
 from PyQt6.QtCore import QTimer, QSortFilterProxyModel, pyqtSignal, QModelIndex, QVariant
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -9,14 +9,11 @@ import torch
 import pandas as pd
 from ServerConnection import ServerConnection
 from PyQt6.QtCore import Qt, QAbstractTableModel
-import pandas as pd
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableView, QPushButton, QMessageBox,QGroupBox, QLabel
-from PyQt6.QtCore import QSortFilterProxyModel, QModelIndex
-import pandas as pd
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTableView, QPushButton, QMessageBox
 from torchmetrics.functional import precision_recall_curve
-from scipy.stats import pearsonr
+from sklearn.metrics import average_precision_score
 
 
 
@@ -51,18 +48,20 @@ class CustomSortFilterProxyModel(QSortFilterProxyModel):
         return value  # Fallback
 
 class DataFrameDialog(QDialog):
-    row_selected = pyqtSignal(list)  # Signal to send selected row data
-    load_batch_signal = pyqtSignal(list)  # Signal to load next batch of images
-    load_selected_images_signal = pyqtSignal(list)  # Signal for loading selected images
+    """ Dialog to display server data in a QTableView. """
+
+    # Signals to communicate with MainWindow
+    row_selected = pyqtSignal(list) 
+    load_batch_signal = pyqtSignal(list)  
+    load_selected_images_signal = pyqtSignal(list)  
 
     def __init__(self, dataframe, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Server Data")
         self.resize(500,300)
 
-        self.last_loaded_index = 0  # Track last loaded index for current sorting
+        self.last_loaded_index = 0 
 
-        # Layout
         layout = QVBoxLayout(self)
 
         # Create QTableView
@@ -110,7 +109,7 @@ class DataFrameDialog(QDialog):
         self.last_loaded_index = 0
 
     def load_next_batch_clicked(self):
-        """ Load the next 10 images from the currently sorted view. """
+        """ Load the next 10 images from the currently sorted view of server data. """
         total_rows = self.proxy_model.rowCount()
         if self.last_loaded_index >= total_rows:
             QMessageBox.information(self, "Info", "All images in the current view are already loaded.")
@@ -136,7 +135,7 @@ class DataFrameDialog(QDialog):
 
     
     def load_selected_images(self):
-        """ Load images from selected rows in the current sorted view. """
+        """ Load images from selected rows in the current sorted view of server data."""
         selected_indexes = self.table_view.selectionModel().selectedRows()
         if not selected_indexes:
             QMessageBox.information(self, "Info", "No rows selected.")
@@ -162,28 +161,8 @@ class DataFrameDialog(QDialog):
         """ Emit the selected row along with correctly sorted surrounding rows """
 
         # Get the correct row in the sorted view
-        # sorted_row_idx = index.row()  
         source_index = self.proxy_model.mapToSource(index)  # Convert to original index
         original_row_idx = source_index.row()  # Get correct row index
-
-        # # Get first and last visible row in sorted order
-        # first_visible_sorted = self.table_view.indexAt(self.table_view.rect().topLeft()).row()
-        # last_visible_sorted = self.table_view.indexAt(self.table_view.rect().bottomLeft()).row()
-
-        # if last_visible_sorted == -1:  # If last row isn't fully visible, adjust
-        #     last_visible_sorted = self.proxy_model.rowCount() - 1
-
-        # # Define the window of rows (±2 rows around selected)
-        # window_size = 0
-        # start_sorted_idx = max(first_visible_sorted, sorted_row_idx - window_size)
-        # end_sorted_idx = min(last_visible_sorted, sorted_row_idx + window_size)
-
-        # # Convert sorted indices to original dataframe indices
-        # surrounding_rows = []
-        # for i in range(start_sorted_idx, end_sorted_idx + 1):
-        #     source_row = self.proxy_model.mapToSource(self.proxy_model.index(i, 0)).row()  # Get original row
-        #     row_data = [self.model.data(self.model.index(source_row, col)) for col in range(self.model.columnCount())]
-        #     surrounding_rows.append(row_data)
 
         # Get selected row data
         selected_row_data = [self.model.data(self.model.index(original_row_idx, col)) for col in range(self.model.columnCount())]
@@ -239,9 +218,27 @@ class DataFrameModel(QAbstractTableModel):
         self.dataframe = new_dataframe
         self.endResetModel()
 
+class MplCanvas(FigureCanvas):
+    """ FigureCanvas for plotting Matplotlib plots """
+    def __init__(self,parent=None, width=7, height=3, dpi=100):
+        fig = Figure(figsize=(width, height), dpi=dpi)
+        self.ax = fig.add_subplot(111)
+
+
+        super().__init__(fig)
+        self.setParent(parent)
+
+    def plot(self, x, y, xlabel, ylabel):
+        self.ax.clear()
+        self.ax.plot(x, y)
+        self.ax.set_xlabel(xlabel)
+        self.ax.set_ylabel(ylabel)
+        self.draw()
+
 
 class ImageCanvas(FigureCanvas):
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
+    """ FigureCanvas for displaying images as Matplotlib plots """
+    def __init__(self, parent=None, width=5, height=5, dpi=100):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.ax = fig.add_subplot(111)
         self.ax.axis('off')
@@ -312,16 +309,17 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         # Load the .ui file
-        uic.loadUi("form.ui", self)  # Replace with your .ui file path
+        uic.loadUi("form-2.ui", self) # Load the UI file
+        self.showMaximized()
 
         # Create a connection to the server
         self.conn = ServerConnection()
         self.conn.open_connection()
 
         self.images_df = pd.DataFrame()
-        # self.images_df["Error Mask"] = None
+        
 
-        self.imagesTable.setSortingEnabled(True)  # Enable sorting
+        self.imagesTable.setSortingEnabled(True)  # Enable sorting for loaded images table
 
         # Create a model for stats_dataframe
         self.stats_model = DataFrameModel(pd.DataFrame())  
@@ -332,12 +330,19 @@ class MainWindow(QMainWindow):
         self.imagesTable.doubleClicked.connect(self.on_image_table_double_click)
         self.imagesTable.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)  # Select entire rows
 
-
+    
 
         # init UI
+    
+        # Add plot canvas to layout
+        self.plotCanvas = MplCanvas(self, dpi=100)
+        
+        self.plotLayout.addWidget(self.plotCanvas, alignment=Qt.AlignmentFlag.AlignCenter)     
+
+
         # Add image canvas to layout
-        self.canvas_1 = ImageCanvas(self, width=7, height=6, dpi=100)
-        self.canvas_2 = ImageCanvas(self, width=7, height=6, dpi=100)
+        self.canvas_1 = ImageCanvas(self, dpi=100)
+        self.canvas_2 = ImageCanvas(self, dpi=100)
 
         self.horizontalLayout_1.addWidget(self.canvas_1)
         self.horizontalLayout_2.addWidget(self.canvas_2)
@@ -345,27 +350,30 @@ class MainWindow(QMainWindow):
         # Disable interactive elements until dataframe is loaded
         self.set_interactive_elements_enabled(False)
 
-        self.current_image_idx = None #the index in <dataframe_images> of the currently selected/displayed image
+        self.current_image_idx = None #the index in self.images_df of the currently selected/displayed image
 
-        # Connect the button
-        # self.pushButton.clicked.connect(self.on_button_click)
+        # Connect the buttons to their respective functions
         self.pushButton_2.clicked.connect(self.clear_button_click)
 
         self.nextButton.clicked.connect(self.next_image_click)
         self.prevButton.clicked.connect(self.prev_image_click)
 
+
+        # Connect the sliders to their respective functions
         self.ThresholdSlider_1.valueChanged.connect(self.slider_value_changed)
         self.ThresholdSlider_2.valueChanged.connect(self.slider_value_changed)
 
+        # Connect the dropdowns to their respective functions
         self.ComboBoxBackground1.currentTextChanged.connect(lambda: self.dropdown_change(column = self.ComboBoxBackground1.currentText(),canvas = 1))
         self.ComboBoxBackground2.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxBackground2.currentText(),2))
         self.ComboBoxForeground1.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxForeground1.currentText(),1))
         self.ComboBoxForeground2.currentTextChanged.connect(lambda: self.dropdown_change(self.ComboBoxForeground2.currentText(),2))
 
+        # Connect the checkboxes to their respective functions
         self.checkBoxBinarize1.checkStateChanged.connect(self.onCheckboxChange)
         self.checkBoxBinarize2.checkStateChanged.connect(self.onCheckboxChange)
 
-        self.setup_statistics_ui()
+        # self.setup_statistics_ui()
 
 
         # Start polling for dataframe
@@ -379,41 +387,24 @@ class MainWindow(QMainWindow):
             return
         
         entropy_image = self.map_metric_to_image("Entropy", self.current_image_idx)
-        counter_probability_image = self.map_metric_to_image("Counter-probability", self.current_image_idx)
         error_mask = self.map_metric_to_image("Error Mask", self.current_image_idx)
 
         # Compute the best threshold and F1 score
-        best_threshold, f1_score = self.compute_best_threshold(entropy_image, error_mask)
-        self.EntropyF1ScoreLabel.setText(f"F1 Score: {f1_score:.2f}")
+        best_threshold, f1_score, precision, recall = self.compute_best_threshold(entropy_image, error_mask)
+        self.entropyF1ScoreLabel.setText(f"F1 Score: {f1_score:.2f}")
         self.bestEntropyThresholdLabel.setText(f"Best Threshold: {best_threshold:.2f}")
-        self.entropyPearsonLabel.setText(f"Entropy Correlation: {self.compute_pearson_correlation(entropy_image, error_mask):.2f}")
-        self.counterProbPearsonLabel.setText(f"Counter-probability Correlation: {self.compute_pearson_correlation(counter_probability_image, error_mask):.2f}")
+        self.entropyAUPRLabel.setText(f"AUPR: {self.compute_aupr(entropy_image, error_mask):.2f}")
+
+        # Plot the precision-recall curve
+        self.plotCanvas.plot(recall, precision, "Recall", "Precision")
+
         
         
 
+    def compute_aupr(self, uncertainty: np.ndarray, error_mask: np.ndarray) -> float:
+        """Compute Area Under the Precision-Recall Curve (AUPR) for uncertainty as an error predictor."""
+        return average_precision_score(error_mask.flatten(), uncertainty.flatten())
 
-    def setup_statistics_ui(self):
-        """ Create a UI section for displaying uncertainty-related image statistics. """
-        # self.statsGroupBox = QGroupBox("Uncertainty Statistics") 
-        self.statsLayout = QVBoxLayout()
-
-        # Create QLabel widgets for different uncertainty statistics
-        self.bestEntropyThresholdLabel = QLabel("Best Threshold: 0.0")
-        self.EntropyF1ScoreLabel = QLabel("F1 Score: 0.0")
-        self.entropyPearsonLabel = QLabel("Entropy Correlation: 0.0")
-        self.counterProbPearsonLabel = QLabel("Counter-probability Correlation: 0.0")
-
-        # Add labels to layout
-        self.statsLayout.addWidget(self.bestEntropyThresholdLabel)
-        self.statsLayout.addWidget(self.EntropyF1ScoreLabel)
-        self.statsLayout.addWidget(self.entropyPearsonLabel)
-        self.statsLayout.addWidget(self.counterProbPearsonLabel)
-
-        self.statsGroupBox.setLayout(self.statsLayout)
-
-    def compute_pearson_correlation(self, uncertainty: np.ndarray, error_mask: np.ndarray) -> float:
-        """Compute Pearson correlation between uncertainty and error mask."""
-        return pearsonr(uncertainty.flatten(), error_mask.flatten())[0]
     
     def compute_best_threshold(self, uncertainty_image, error_mask):
         """ Compute the best threshold for the given image and target. """
@@ -435,7 +426,7 @@ class MainWindow(QMainWindow):
         best_threshold_idx = f1_scores.argmax()
         best_threshold = thresholds[best_threshold_idx]
 
-        return best_threshold, f1_scores[best_threshold_idx]
+        return best_threshold, f1_scores[best_threshold_idx], precision, recall
 
 
 
@@ -445,12 +436,12 @@ class MainWindow(QMainWindow):
         canvas = None
 
         if sender == self.checkBoxBinarize1:
-            self.canvas_1.binary = state == Qt.CheckState.Checked  # ✅ Update binarization state
+            self.canvas_1.binary = state == Qt.CheckState.Checked  # Update binarization state
             foreground_metric = self.ComboBoxForeground1.currentText()
             background_metric = self.ComboBoxBackground1.currentText()
             canvas = self.canvas_1
         elif sender == self.checkBoxBinarize2:
-            self.canvas_2.binary = state == Qt.CheckState.Checked  # ✅ Update binarization state
+            self.canvas_2.binary = state == Qt.CheckState.Checked  # Update binarization state
             foreground_metric = self.ComboBoxForeground2.currentText()
             background_metric = self.ComboBoxBackground2.currentText()
             canvas = self.canvas_2
@@ -474,12 +465,7 @@ class MainWindow(QMainWindow):
 
     def display_selected_image(self, index):
         """ Display the image corresponding to batch_index and image_index, given selected combo box values. """
-        # image_data = self.get_image_data_from_df(batch_index, image_index)
         image_data = self.images_df.iloc[index]
-        # print('image_data:', image_data)
-
-        
-
 
         if not image_data.empty:
             self.current_image_idx = index
@@ -515,7 +501,7 @@ class MainWindow(QMainWindow):
     def update_stats_table(self):
         """ Update the QTableView to match the order of images_df while showing stats_dataframe info. """
         if self.images_df.empty:
-            return  # No images to display
+            return 
 
         # Create a view of stats_dataframe that only includes loaded images, keeping images_df order
         filtered_stats = self.images_df[["batch_index", "image_index"]].merge(
@@ -530,10 +516,8 @@ class MainWindow(QMainWindow):
     def set_interactive_elements_enabled(self, enabled: bool):
         """Enable or disable all interactive elements."""
         self.pushButton_2.setEnabled(enabled)
-        
         self.nextButton.setEnabled(enabled)
         self.prevButton.setEnabled(enabled)
-        
         self.ThresholdSlider_1.setEnabled(enabled)
         self.ComboBoxBackground1.setEnabled(enabled)
         self.ComboBoxBackground2.setEnabled(enabled)
@@ -542,6 +526,22 @@ class MainWindow(QMainWindow):
 
     def start_dataframe_loading(self):
         """ Periodically check if dataframe is ready """
+
+        # Show a message box and start checking for the dataframe
+        self.loading_msgbox = QMessageBox(self)
+        self.loading_msgbox.setWindowTitle("Loading")
+        self.loading_msgbox.setText("Please wait, Dataframe is loading...")
+        self.loading_msgbox.setIcon(QMessageBox.Icon.Information)
+        self.loading_msgbox.setStandardButtons(QMessageBox.StandardButton.NoButton)  # No close button
+        self.loading_msgbox.setModal(True)  # Make it modal to block interaction
+        self.loading_msgbox.show()
+        screen_geometry = QApplication.primaryScreen().geometry()
+        x = (screen_geometry.width() - self.loading_msgbox.width()) // 2
+        y = (screen_geometry.height() - self.loading_msgbox.height()) // 2
+        self.loading_msgbox.move(x, y)
+
+        self.loading_msgbox.show()
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.check_dataframe)
         self.timer.start(1500)  # Check every 1.5 seconds
@@ -557,14 +557,15 @@ class MainWindow(QMainWindow):
             self.stats_dataframe["IsLoaded"] = False
             self.timer.stop()  # Stop checking
 
+            # Close the loading message box
+            self.loading_msgbox.accept()
+
             # Enable interactive elements
             self.set_interactive_elements_enabled(True)
-            self.populate_comboboxes()
             
+            # Populate the comboboxes
+            self.populate_comboboxes()
 
-            self.dataframeLabel.setText("Dataframe: Loaded!")
-            # timeout for 5 seconds before clearing the label
-            QTimer.singleShot(5000, lambda: self.dataframeLabel.clear())
             self.show_dataframe_popup(self.stats_dataframe)
 
 
@@ -582,20 +583,11 @@ class MainWindow(QMainWindow):
         foreground_options = ['Entropy','Counter-probability','Error Mask','Ground Truth','Prediction']
         background_options = ['Raw image','Entropy','Counter-probability','Error Mask','Ground Truth','Prediction']
         
-        # combobox_options = self._GetComboBoxOptions()
         self.ComboBoxBackground1.addItems(background_options)
         self.ComboBoxBackground2.addItems(background_options)
         self.ComboBoxForeground1.addItems(foreground_options)
         self.ComboBoxForeground2.addItems(foreground_options)
 
-    def _GetComboBoxOptions(self) -> list[str]:
-        #needs the columns 0 and 1 to be index cols and -1 to be IsLoaded helper column 
-        # options = self.stats_dataframe.columns.values[2:-1].tolist()
-        # options.append("Error Mask")
-        options = ['Raw image','Entropy', 'Error Mask']
-        #TODO: Could make a mapping between column names and their display names
-        return options
-    
     def map_metric_to_image(self, metric:str, row:int) -> np.ndarray:
         """Maps the column name to the corresponding image in the dataframe_images"""
         # Dictionary to map column names to their corresponding image
@@ -606,9 +598,9 @@ class MainWindow(QMainWindow):
     
 
     def dropdown_change(self, column:str, canvas:str):
-        """Changes the image in [layer] on [canvas] to the one in the column specified by the new value of the dropdown.
-        Assumes Column 3 of dataframe_images is target/ground_truth and col 4 is prediction for computation of error mask.
+        """Changes the image in [layer] on [canvas] to the one in the column specified by the new value of the dropdown""
         Assumes Column Error mask already exists in the dataframe"""
+
         if self.current_image_idx == None: return
         row = self.current_image_idx
 
@@ -617,8 +609,6 @@ class MainWindow(QMainWindow):
                           'Perplexity': 'perplexity_image', 'Counter-probability': 'assuredness_image',
                           'Ground Truth': 'target_image', 'Prediction': 'prediction_image'}
 
-        #Create the error mask if we want it and it does not yet exist
-        # if (column == "Error Mask") and (bool(self.images_df.iloc[row].isna()['Error Mask'])): self.compute_errorMask(row)
         match canvas:
             case 1:
                 background_column = metric_mapping[self.ComboBoxBackground1.currentText()]
@@ -649,16 +639,15 @@ class MainWindow(QMainWindow):
     def compute_errorMask(self, images_df ,row=None) ->np.ndarray:
         """Computes the Error Mask for an image and returns the computed mask.
         Parameters:
+            images_df: The dataframe containing the images
             row (optional): The index of the image for which the error mask will be computed. Defaults to the index of the current Image if no value or None is passed
         Returns:
             mask: the computed mask"""
         
-        # print("COMPUTING ERROR MASK")
         if row == None: row = self.current_image_idx
-        # mask = (self.images_df['prediction_image'][row] != self.images_df['target_image'][row]).astype(np.bool)
+        
         mask = (images_df['prediction_image'][row] != images_df['target_image'][row]).astype(np.bool)
 
-        # self.images_df["Error Mask"][row] = mask
         return mask
 
 
@@ -681,7 +670,7 @@ class MainWindow(QMainWindow):
 
 
     def load_images_from_server(self, indices: list[tuple[int, int]]) -> pd.DataFrame:
-        """ Get images from the server given a list of indices. """
+        """ Get images from the server given a list of indices [(batch_index,image_index)]. """
 
         # Get only the images that are not already loaded
         indices = [(batch_index, img_index) for batch_index, img_index in indices
@@ -706,25 +695,13 @@ class MainWindow(QMainWindow):
         images_df["Error Mask"] = None
         # Compute the error mask for the loaded images
         for row in images_df.index:
-            # print("Computing error mask for row", row)
             images_df['Error Mask'][row] = self.compute_errorMask(images_df, row)
 
         self.images_df = pd.concat([self.images_df,images_df], ignore_index=True)
-        # print(self.images_df)
 
         self.update_stats_table()  # Refresh the table
 
     
-
-    def get_image_data_from_df(self, batch_index, img_index) -> pd.DataFrame: 
-        """ Get image row from the local dataframe """
-        # TODO: Optimize by using indexing
-        image_data = self.images_df[(self.images_df["batch_index"] == batch_index)
-                                     & (self.images_df["image_index"] == img_index)]
-        return image_data
-    
-
-
 
     def dataframe_selection_double_click(self, selected_row):
         """ Load selected image from server to local dataframe """
@@ -752,14 +729,14 @@ class MainWindow(QMainWindow):
     def next_image_click(self):
         """ Move to the next image based on the current sorted order. """
         if self.current_image_idx is None:
-            return  # No image selected
+            return  
 
         # Get the current sorted index in the table
         sorted_index = self.get_sorted_index_from_images_df(self.current_image_idx)
         if sorted_index is None or sorted_index >= len(self.images_df) - 1:
-            return  # Already at the last image
+            return  
 
-        # Move to the next image in the sorted order
+        
         next_sorted_index = sorted_index + 1
         next_original_index = self.get_original_index_from_sorted_table(next_sorted_index)
 
@@ -769,11 +746,11 @@ class MainWindow(QMainWindow):
     def prev_image_click(self):
         """ Move to the previous image based on the current sorted order. """
         if self.current_image_idx is None:
-            return  # No image selected
+            return  
 
         sorted_index = self.get_sorted_index_from_images_df(self.current_image_idx)
         if sorted_index is None or sorted_index <= 0:
-            return  # Already at the first image
+            return  
 
         prev_sorted_index = sorted_index - 1
         prev_original_index = self.get_original_index_from_sorted_table(prev_sorted_index)
