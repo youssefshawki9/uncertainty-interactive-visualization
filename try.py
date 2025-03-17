@@ -469,7 +469,6 @@ class MainWindow(QMainWindow):
 
         if not image_data.empty:
             self.current_image_idx = index
-            # print("Current image index:", self.current_image_idx)
 
             # get selected combo box values
             background_1 = self.ComboBoxBackground1.currentText()
